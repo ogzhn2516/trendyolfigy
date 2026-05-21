@@ -1,13 +1,13 @@
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --background: #f5f4ef;
+  --border: #d9ddd7;
+  --danger: #9f332d;
+  --foreground: #16211d;
+  --muted: #5d6862;
+  --panel: #fffdf8;
+  --panel-strong: #ffffff;
+  --success: #176547;
+  --warning: #8b5600;
 }
 
 html {
@@ -42,8 +42,17 @@ a {
   text-decoration: none;
 }
 
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+img {
+  max-width: 100%;
 }
