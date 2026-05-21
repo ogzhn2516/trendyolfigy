@@ -35,11 +35,14 @@ const trendyolSchema = z.object({
   TRENDYOL_API_KEY: z.string().min(1),
   TRENDYOL_API_SECRET: z.string().min(1),
   TRENDYOL_BASE_URL: optionalUrl,
-  TRENDYOL_BRAND_ID: z.coerce.number().int().positive(),
+  TRENDYOL_BRAND_ID: optionalPositiveInteger,
+  TRENDYOL_INTEGRATION_REFERENCE_CODE: optionalText,
   TRENDYOL_RETURNING_ADDRESS_ID: optionalPositiveInteger,
+  TRENDYOL_SELLER_ID: optionalText,
   TRENDYOL_SHIPMENT_ADDRESS_ID: optionalPositiveInteger,
   TRENDYOL_STORE_FRONT_CODE: optionalText,
-  TRENDYOL_SUPPLIER_ID: z.string().min(1),
+  TRENDYOL_SUPPLIER_ID: optionalText,
+  TRENDYOL_TOKEN: optionalText,
 });
 
 function parseEnv<T>(schema: z.ZodType<T>, name: string): T {
@@ -70,12 +73,28 @@ export function getDatabaseUrl() {
   return databaseUrl;
 }
 
+export function hasDatabaseUrl() {
+  return Boolean(process.env.DATABASE_URL?.trim());
+}
+
 export function getTelegramConfig() {
   return parseEnv(telegramSchema, "Telegram");
 }
 
 export function getTrendyolConfig() {
-  return parseEnv(trendyolSchema, "Trendyol");
+  const config = parseEnv(trendyolSchema, "Trendyol");
+  const sellerId = config.TRENDYOL_SELLER_ID ?? config.TRENDYOL_SUPPLIER_ID;
+
+  if (!sellerId) {
+    throw new Error(
+      "Trendyol configuration error. TRENDYOL_SELLER_ID is required.",
+    );
+  }
+
+  return {
+    ...config,
+    TRENDYOL_SELLER_ID: sellerId,
+  };
 }
 
 export function getOptionalBlobToken() {

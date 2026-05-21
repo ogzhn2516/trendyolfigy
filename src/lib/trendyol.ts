@@ -50,6 +50,10 @@ export function buildTrendyolPayload(draft: ProductDraft) {
     throw new Error("Trendyol gönderimi için kalıcı HTTPS görsel URL'si gerekli.");
   }
 
+  if (!config.TRENDYOL_BRAND_ID) {
+    throw new Error("Trendyol gönderimi için TRENDYOL_BRAND_ID gerekli.");
+  }
+
   const item: Record<string, unknown> = {
     attributes: draft.attributes,
     barcode: draft.barcode,
@@ -95,7 +99,7 @@ async function readResponse(response: Response) {
 export async function createTrendyolProduct(payload: ReturnType<typeof buildTrendyolPayload>) {
   const config = getTrendyolConfig();
   const response = await fetch(
-    `${getBaseUrl()}/integration/product/sellers/${config.TRENDYOL_SUPPLIER_ID}/v2/products`,
+    `${getBaseUrl()}/integration/product/sellers/${config.TRENDYOL_SELLER_ID}/v2/products`,
     {
       body: JSON.stringify(payload),
       cache: "no-store",
@@ -143,4 +147,18 @@ export class TrendyolApiError extends Error {
     this.body = body;
     this.name = "TrendyolApiError";
   }
+}
+
+export function getTrendyolErrorSummary(error: unknown) {
+  if (!(error instanceof TrendyolApiError)) {
+    return error instanceof Error ? error.message : "Trendyol isteği başarısız oldu.";
+  }
+
+  const responseText = JSON.stringify(error.body);
+
+  if (!responseText || responseText === "{}") {
+    return error.message;
+  }
+
+  return `${error.message} ${responseText.slice(0, 700)}`;
 }

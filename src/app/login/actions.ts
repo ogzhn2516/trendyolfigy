@@ -8,7 +8,15 @@ export async function loginAction(formData: FormData) {
   const username = String(formData.get("username") ?? "");
   const password = String(formData.get("password") ?? "");
 
-  if (!verifyAdminCredentials(username, password)) {
+  let isVerified = false;
+
+  try {
+    isVerified = verifyAdminCredentials(username, password);
+  } catch {
+    redirect("/login?config=1");
+  }
+
+  if (!isVerified) {
     redirect("/login?error=1");
   }
 

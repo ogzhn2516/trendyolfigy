@@ -2,14 +2,13 @@ import "server-only";
 
 import {
   getDraftById,
-  markDraftFailure,
   markDraftReview,
   markDraftSubmitted,
 } from "@/lib/db";
 import {
   buildTrendyolPayload,
   createTrendyolProduct,
-  TrendyolApiError,
+  getTrendyolErrorSummary,
 } from "@/lib/trendyol";
 
 function getBatchRequestId(response: unknown) {
@@ -22,7 +21,9 @@ function getBatchRequestId(response: unknown) {
   return typeof batchRequestId === "string" ? batchRequestId : null;
 }
 
-function validateDraftForSubmission(draft: NonNullable<Awaited<ReturnType<typeof getDraftById>>>) {
+function validateDraftForSubmission(
+  draft: NonNullable<Awaited<ReturnType<typeof getDraftById>>>,
+) {
   if (!draft.imageUrl) {
     return "Görsel Vercel Blob'a yüklenmedi. BLOB_READ_WRITE_TOKEN ayarlanmalı veya görsel URL'si admin panelinden girilmeli.";
   }
@@ -42,6 +43,39 @@ function validateDraftForSubmission(draft: NonNullable<Awaited<ReturnType<typeof
   return null;
 }
 
+export async function submitDirectProductToTrendyol(
+  draft: NonNullable<Awaited<ReturnType<typeof getDraftById>>>,
+) {
+  const validationError = validateDraftForSubmission(draft);
+
+  if (validationError) {
+    return {
+      batchRequestId: null,
+      error: validationError,
+      ok: false,
+    };
+  }
+
+  try {
+    const payload = buildTrendyolPayload(draft);
+    const response = await createTrendyolProduct(payload);
+
+    return {
+      batchRequestId: getBatchRequestId(response),
+      error: null,
+      ok: true,
+      payload,
+      response,
+    };
+  } catch (error) {
+    return {
+      batchRequestId: null,
+      error: getTrendyolErrorSummary(error),
+      ok: false,
+    };
+  }
+}
+
 export async function submitDraftToTrendyol(id: string) {
   const draft = await getDraftById(id);
 
@@ -49,27 +83,19 @@ export async function submitDraftToTrendyol(id: string) {
     throw new Error("Taslak bulunamadı.");
   }
 
-  const validationError = validateDraftForSubmission(draft);
+  const result = await submitDirectProductToTrendyol(draft);
 
-  if (validationError) {
-    return markDraftReview(id, validationError);
-  }
-
-  const payload = buildTrendyolPayload(draft);
-
-  try {
-    const response = await createTrendyolProduct(payload);
-
-    return markDraftSubmitted(id, getBatchRequestId(response), payload, response);
-  } catch (error) {
-    if (error instanceof TrendyolApiError) {
-      return markDraftFailure(id, error.message, payload, error.body);
-    }
-
-    return markDraftFailure(
+  if (result.ok) {
+    return markDraftSubmitted(
       id,
-      error instanceof Error ? error.message : "Trendyol gönderimi başarısız oldu.",
-      payload,
+      result.batchRequestId,
+      result.payload,
+      result.response,
     );
   }
+
+  return markDraftReview(
+    id,
+    result.error ?? "Trendyol gönderimi kontrol bekliyor.",
+  );
 }

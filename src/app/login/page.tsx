@@ -6,7 +6,7 @@ import { isAdminAuthenticated } from "@/lib/auth";
 import styles from "./login.module.css";
 
 type LoginPageProps = {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ config?: string; error?: string }>;
 };
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
@@ -41,6 +41,12 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           </label>
           {params.error ? (
             <p className={styles.error}>Giriş bilgileri doğrulanamadı.</p>
+          ) : null}
+          {params.config ? (
+            <p className={styles.error}>
+              Vercel env içinde ADMIN_USERNAME, ADMIN_PASSWORD ve en az 32
+              karakter ADMIN_SESSION_SECRET gerekli.
+            </p>
           ) : null}
           <button type="submit">Admin paneline gir</button>
         </form>

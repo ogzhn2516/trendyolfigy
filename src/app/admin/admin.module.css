@@ -46,10 +46,103 @@
 
 .metrics div,
 .banner,
+.configPanel,
 .emptyQueue {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel);
+}
+
+.configPanel {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 20px;
+}
+
+.configLead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.configLead p,
+.configNote,
+.configItem p {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.configLead h2 {
+  margin-top: 5px;
+  font-size: 1.35rem;
+}
+
+.configLead > strong,
+.configItem span {
+  border-radius: 999px;
+  padding: 6px 9px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.configGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.configItem {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  background: var(--panel-strong);
+}
+
+.configItem span {
+  width: fit-content;
+}
+
+.configItem code {
+  overflow-wrap: anywhere;
+  border-radius: 5px;
+  padding: 5px 7px;
+  color: #23433b;
+  background: #edf4ed;
+  font-size: 0.8rem;
+}
+
+.configOk {
+  color: var(--success);
+  background: rgba(23, 101, 71, 0.12);
+}
+
+.configMissing {
+  color: var(--danger);
+  background: rgba(159, 51, 45, 0.12);
+}
+
+.modeBanner {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 18px;
+  border: 1px solid rgba(139, 86, 0, 0.25);
+  border-radius: 8px;
+  padding: 18px;
+  color: var(--warning);
+  background: rgba(139, 86, 0, 0.08);
+}
+
+.modeBanner p {
+  max-width: 900px;
+  color: var(--foreground);
+  line-height: 1.5;
 }
 
 .metrics div {
@@ -265,7 +358,12 @@
   }
 
   .metrics,
+  .configGrid,
   .fieldGrid {
     grid-template-columns: 1fr;
+  }
+
+  .configLead {
+    flex-direction: column;
   }
 }

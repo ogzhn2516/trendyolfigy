@@ -7,8 +7,10 @@ import {
 } from "@/app/admin/actions";
 import { CategoryAttributesPanel } from "@/components/category-attributes-panel";
 import { isAdminAuthenticated } from "@/lib/auth";
+import { getRuntimeConfigStatus } from "@/lib/config-status";
 import type { ProductDraft } from "@/lib/db";
 import { listDrafts } from "@/lib/db";
+import { hasDatabaseUrl } from "@/lib/env";
 
 import styles from "./admin.module.css";
 
@@ -45,14 +47,18 @@ export default async function AdminPage() {
     redirect("/login");
   }
 
+  const configStatus = getRuntimeConfigStatus();
+  const queueEnabled = hasDatabaseUrl();
   let drafts: ProductDraft[] = [];
   let databaseError = "";
 
-  try {
-    drafts = await listDrafts();
-  } catch (error) {
-    databaseError =
-      error instanceof Error ? error.message : "Veritabanı okunamadı.";
+  if (queueEnabled) {
+    try {
+      drafts = await listDrafts();
+    } catch (error) {
+      databaseError =
+        error instanceof Error ? error.message : "Veritabanı okunamadı.";
+    }
   }
 
   const submittedCount = drafts.filter((draft) => draft.status === "submitted").length;
@@ -84,6 +90,63 @@ export default async function AdminPage() {
           <strong>{submittedCount}</strong>
         </div>
       </section>
+
+      <section className={styles.configPanel}>
+        <div className={styles.configLead}>
+          <div>
+            <p>Çalışma modu</p>
+            <h2>
+              {configStatus.mode === "queue"
+                ? "Kalıcı admin kuyruğu"
+                : "Hobby doğrudan gönderim"}
+            </h2>
+          </div>
+          <strong
+            className={
+              configStatus.missingRequired.length === 0
+                ? styles.configOk
+                : styles.configMissing
+            }
+          >
+            {configStatus.missingRequired.length === 0
+              ? "Zorunlu env hazır"
+              : `${configStatus.missingRequired.length} zorunlu env eksik`}
+          </strong>
+        </div>
+        <p className={styles.configNote}>
+          Trendyol ürün API auth için Seller Panel ekranındaki Satıcı ID, API Key ve API
+          Secret kullanılır. Entegrasyon Referans Kodu destek içindir; Token bu
+          Product Create V2 isteğine eklenmez.
+        </p>
+        <div className={styles.configGrid}>
+          {configStatus.items.map((item) => (
+            <div className={styles.configItem} key={item.key}>
+              <span
+                className={
+                  item.configured ? styles.configOk : styles.configMissing
+                }
+              >
+                {item.configured ? "Hazır" : item.required ? "Eksik" : "Opsiyonel"}
+              </span>
+              <strong>{item.label}</strong>
+              <code>{item.key}</code>
+              <p>{item.note}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {!queueEnabled ? (
+        <section className={styles.modeBanner}>
+          <strong>DATABASE_URL yok: admin kuyruğu saklanmıyor.</strong>
+          <p>
+            Telegram webhook görseli Vercel Blob içine koyup Trendyol servisine doğrudan
+            gönderir. Trendyol hata döndürürse cevap Telegram mesajında görünür.
+            Kalıcı düzeltme kuyruğu için ücretsiz bir Marketplace Postgres
+            bağlantısı ekleyip DATABASE_URL env değerini bağla.
+          </p>
+        </section>
+      ) : null}
 
       {databaseError ? (
         <section className={styles.banner}>
@@ -243,7 +306,7 @@ export default async function AdminPage() {
           </article>
         ))}
 
-        {!databaseError && drafts.length === 0 ? (
+        {queueEnabled && !databaseError && drafts.length === 0 ? (
           <section className={styles.emptyQueue}>
             Telegram’dan ilk fotoğraflı ürün mesajı geldiğinde taslak burada
             görünecek.
