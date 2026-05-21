@@ -21,6 +21,19 @@ export type TrendyolAttributeInput = {
   customAttributeValue?: string;
 };
 
+const figyfunAnimalFigureDefaults = {
+  attributes: [
+    { attributeId: 1192, attributeValueId: 10617344 },
+    { attributeId: 1156, attributeValueId: 1225110 },
+    { attributeId: 279, attributeValueId: 1256866 },
+    { attributeId: 767, attributeValueId: 290274 },
+  ] satisfies TrendyolAttributeInput[],
+  categoryId: 4498,
+  dimensionalWeight: 1,
+  quantity: 1000,
+  vatRate: 20,
+};
+
 type CaptionKey =
   | "attributes"
   | "barcode"
@@ -143,10 +156,15 @@ export function parseProductCaption(caption?: string): ParsedCaption {
   const description = fields.get("description")?.trim();
   const salePrice = parseNumber(fields.get("salePrice"));
   const listPrice = parseNumber(fields.get("listPrice"));
-  const categoryId = parseNumber(fields.get("categoryId"));
-  const quantity = parseNumber(fields.get("quantity")) ?? 1;
-  const vatRate = parseNumber(fields.get("vatRate")) ?? 20;
-  const dimensionalWeight = parseNumber(fields.get("dimensionalWeight")) ?? 1;
+  const categoryId =
+    parseNumber(fields.get("categoryId")) ?? figyfunAnimalFigureDefaults.categoryId;
+  const quantity =
+    parseNumber(fields.get("quantity")) ?? figyfunAnimalFigureDefaults.quantity;
+  const vatRate =
+    parseNumber(fields.get("vatRate")) ?? figyfunAnimalFigureDefaults.vatRate;
+  const dimensionalWeight =
+    parseNumber(fields.get("dimensionalWeight")) ??
+    figyfunAnimalFigureDefaults.dimensionalWeight;
   const issues: string[] = [];
 
   if (!title) {
@@ -170,7 +188,12 @@ export function parseProductCaption(caption?: string): ParsedCaption {
   }
 
   return {
-    attributes: parseAttributes(fields.get("attributes")),
+    attributes:
+      fields.has("attributes") || categoryId !== figyfunAnimalFigureDefaults.categoryId
+        ? parseAttributes(fields.get("attributes"))
+        : figyfunAnimalFigureDefaults.attributes.map((attribute) => ({
+            ...attribute,
+          })),
     barcode: fields.get("barcode")?.trim(),
     categoryId,
     description,
@@ -188,12 +211,8 @@ export function parseProductCaption(caption?: string): ParsedCaption {
 
 export const telegramCaptionTemplate = `Fotoğraf açıklamasını şu biçimde gönder:
 
-Ürün: Figyfun örnek ürün
+Ürün: Figyfun örnek hayvan figür oyuncak
 Açıklama: Ürünün Trendyol açıklaması
 Fiyat: 499.90
-Liste Fiyatı: 549.90
-Kategori: 123456
-Stok: 5
-KDV: 20
-Desi: 1
-Özellikler: [{"attributeId": 1, "attributeValueId": 2}]`;
+
+Hayvan Figür Oyuncak kategori, KDV 20, stok 1000 ve zorunlu kategori özellikleri otomatik eklenir.`;

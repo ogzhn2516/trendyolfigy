@@ -76,13 +76,14 @@ Send a product photo with a caption like this:
 Urun: Figyfun ornek urun
 Aciklama: Trendyol urun aciklamasi
 Fiyat: 499.90
-Liste Fiyati: 549.90
-Kategori: 123456
-Stok: 5
-KDV: 20
-Desi: 1
-Ozellikler: [{"attributeId": 1, "attributeValueId": 2}]
 ```
+
+The Telegram caption defaults to Figyfun animal figure products:
+`Hayvan Figur Oyuncak` category `4498`, quantity `1000`, VAT `20`,
+dimensional weight `1`, and the required Trendyol category attributes for
+origin `TR`, no battery operation, unspecified age, and no batteries included.
+Optional caption lines such as `Liste Fiyati`, `Kategori`, `Stok`, `KDV`,
+`Desi`, and `Ozellikler` still override those defaults.
 
 Optional generated-code overrides:
 
