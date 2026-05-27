@@ -256,7 +256,7 @@ export default async function AdminPage() {
                   {` ${dashboard.autoAccept.lastResult.message}`}
                 </p>
               ) : (
-                <p>Henüz çalışmadı. Vercel cron 5 dakikada bir kontrol eder.</p>
+                <p>Henüz çalışmadı. Vercel Hobby cron günde bir kez kontrol eder.</p>
               )}
             </form>
           </div>

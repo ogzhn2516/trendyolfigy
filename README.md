@@ -150,8 +150,10 @@ signals when `DATABASE_URL` and Trendyol API credentials are configured.
 - Returns are read from the latest claim records.
 - Finance uses current account `settlements` and `otherfinancials` services.
 - The auto-accept checkbox stores its setting in Postgres and the Vercel cron
-  route checks every 5 minutes. When enabled, Created packages are moved to
-  Picking status.
+  route checks once per day on Hobby. When enabled, Created packages are moved
+  to Picking status. Use the admin panel's manual accept button for immediate
+  processing, or upgrade to Pro / use an external cron service for frequent
+  checks.
 
 Set `CRON_SECRET` in Vercel to protect the cron endpoint. Vercel Cron sends it
 as a bearer token automatically when configured.
