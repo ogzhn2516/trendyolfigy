@@ -57,21 +57,65 @@ const figyfunHomeDecorDefaults: ProductCaptionDefaults = {
   vatRate: 20,
 };
 
+const figyfunEducationalToyDefaults: ProductCaptionDefaults = {
+  attributes: [
+    { attributeId: 1192, attributeValueId: 10617344 },
+    { attributeId: 1156, attributeValueId: 1225110 },
+    { attributeId: 767, attributeValueId: 290274 },
+    { attributeId: 1155, attributeValueId: 1225104 },
+    { attributeId: 279, attributeValueId: 1256866 },
+    { attributeId: 66, attributeValueId: 1218253 },
+  ],
+  categoryId: 1011,
+  dimensionalWeight: 1,
+  quantity: 1000,
+  vatRate: 20,
+};
+
 const defaultsByCategoryId = new Map<number, ProductCaptionDefaults>([
   [figyfunAnimalFigureDefaults.categoryId, figyfunAnimalFigureDefaults],
   [figyfunHomeDecorDefaults.categoryId, figyfunHomeDecorDefaults],
+  [figyfunEducationalToyDefaults.categoryId, figyfunEducationalToyDefaults],
 ]);
 
 const categoryAliases = new Map<string, ProductCaptionDefaults>([
   ["biblo", figyfunHomeDecorDefaults],
+  ["cocuk", figyfunEducationalToyDefaults],
+  ["cocuk egitici", figyfunEducationalToyDefaults],
+  ["cocuk egitici oyuncak", figyfunEducationalToyDefaults],
+  ["cocuk oyuncak", figyfunEducationalToyDefaults],
   ["dekoratif obje", figyfunHomeDecorDefaults],
   ["dekoratif obje ve biblo", figyfunHomeDecorDefaults],
+  ["egitici", figyfunEducationalToyDefaults],
+  ["egitici oyuncak", figyfunEducationalToyDefaults],
   ["ev", figyfunHomeDecorDefaults],
   ["ev dekoratif obje", figyfunHomeDecorDefaults],
   ["ev dekoratif obje ve biblo", figyfunHomeDecorDefaults],
   ["hayvan figur oyuncak", figyfunAnimalFigureDefaults],
   ["oyuncak", figyfunAnimalFigureDefaults],
 ]);
+
+function getAliasDefaults(alias: string) {
+  const exactMatch = categoryAliases.get(alias);
+
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  if (/\b(cocuk|egitici)\b/.test(alias)) {
+    return figyfunEducationalToyDefaults;
+  }
+
+  if (/\b(ev|biblo|dekoratif)\b/.test(alias)) {
+    return figyfunHomeDecorDefaults;
+  }
+
+  if (/\b(hayvan|figur)\b/.test(alias)) {
+    return figyfunAnimalFigureDefaults;
+  }
+
+  return undefined;
+}
 
 type CaptionKey =
   | "attributes"
@@ -187,7 +231,7 @@ function getCategoryDefaults(value?: string) {
   }
 
   const alias = normalizeKey(value ?? "").replace(/[.,;]+$/g, "");
-  const defaults = categoryAliases.get(alias) ?? figyfunAnimalFigureDefaults;
+  const defaults = getAliasDefaults(alias) ?? figyfunAnimalFigureDefaults;
 
   return {
     categoryId: defaults.categoryId,

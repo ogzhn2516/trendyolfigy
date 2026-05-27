@@ -96,6 +96,17 @@ Biblo`) with quantity `1000`, VAT `20`, dimensional weight `1`, and required
 defaults for multicolor, one piece, modern style, poliresin material, and
 origin `TR`.
 
+For children's educational toys, add the category shortcut:
+
+```text
+Kategori: çocuk
+```
+
+That shortcut sends products to Trendyol category `1011` (`Eğitici Oyuncak`)
+with quantity `1000`, VAT `20`, dimensional weight `1`, and required defaults
+for origin `TR`, no battery operation, no batteries included, Turkish language,
+unspecified age, and one-piece package content.
+
 Optional generated-code overrides:
 
 ```text
