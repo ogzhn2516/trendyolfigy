@@ -8,6 +8,7 @@ import {
   updateDraftAction,
 } from "@/app/admin/actions";
 import { CategoryAttributesPanel } from "@/components/category-attributes-panel";
+import { LiveProductMetrics } from "@/components/live-product-metrics";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { getRuntimeConfigStatus } from "@/lib/config-status";
 import type { ProductDraft } from "@/lib/db";
@@ -119,9 +120,6 @@ export default async function AdminPage() {
       error instanceof Error ? error.message : "Operasyon paneli okunamadı.";
   }
 
-  const submittedCount = drafts.filter((draft) => draft.status === "submitted").length;
-  const reviewCount = drafts.filter((draft) => draft.status !== "submitted").length;
-
   return (
     <main className={styles.page}>
       <header className={styles.header}>
@@ -134,20 +132,7 @@ export default async function AdminPage() {
         </form>
       </header>
 
-      <section className={styles.metrics}>
-        <div>
-          <span>Son 100 kayıt</span>
-          <strong>{drafts.length}</strong>
-        </div>
-        <div>
-          <span>Kontrol kuyruğu</span>
-          <strong>{reviewCount}</strong>
-        </div>
-        <div>
-          <span>Trendyol kuyruğuna giden</span>
-          <strong>{submittedCount}</strong>
-        </div>
-      </section>
+      <LiveProductMetrics />
 
       <section className={styles.configPanel}>
         <div className={styles.configLead}>

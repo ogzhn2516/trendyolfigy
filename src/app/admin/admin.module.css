@@ -157,9 +157,23 @@
   padding: 20px;
 }
 
+.metrics p {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
 .metrics strong {
   font-size: 2rem;
   line-height: 1;
+}
+
+.metricError {
+  grid-column: 1 / -1;
+  border: 1px solid rgba(159, 51, 45, 0.2);
+  border-radius: 8px;
+  padding: 12px;
+  color: var(--danger);
+  background: rgba(159, 51, 45, 0.08);
 }
 
 .banner {

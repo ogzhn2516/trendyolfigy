@@ -45,6 +45,18 @@ type ShipmentPackageLineUpdate = {
   quantity: number;
 };
 
+type ProductFilterQuery = {
+  barcode?: string;
+  brandIds?: string;
+  nextPageToken?: string;
+  orderByDirection?: "ASC" | "DESC";
+  page?: number;
+  productMainId?: string;
+  size?: number;
+  status?: "archived" | "blacklisted" | "locked" | "notOnSale" | "onSale";
+  stockCode?: string;
+};
+
 function getHeaders() {
   const config = getTrendyolConfig();
   const authorization = Buffer.from(
@@ -282,6 +294,54 @@ export async function getOtherFinancials(params: FinancialQuery) {
   if (!response.ok) {
     throw new TrendyolApiError(
       `Trendyol Ã¶deme isteÄŸi ${response.status} ile reddedildi.`,
+      body,
+    );
+  }
+
+  return body;
+}
+
+export async function getApprovedProducts(params: ProductFilterQuery = {}) {
+  const config = getTrendyolConfig();
+  const response = await fetch(
+    withQuery(
+      `${getBaseUrl()}/integration/product/sellers/${config.TRENDYOL_SELLER_ID}/products/approved`,
+      params,
+    ),
+    {
+      cache: "no-store",
+      headers: getHeaders(),
+    },
+  );
+  const body = await readResponse(response);
+
+  if (!response.ok) {
+    throw new TrendyolApiError(
+      `Trendyol onaylÄ± Ã¼rÃ¼n isteÄŸi ${response.status} ile reddedildi.`,
+      body,
+    );
+  }
+
+  return body;
+}
+
+export async function getUnapprovedProducts(params: ProductFilterQuery = {}) {
+  const config = getTrendyolConfig();
+  const response = await fetch(
+    withQuery(
+      `${getBaseUrl()}/integration/product/sellers/${config.TRENDYOL_SELLER_ID}/products/unapproved`,
+      params,
+    ),
+    {
+      cache: "no-store",
+      headers: getHeaders(),
+    },
+  );
+  const body = await readResponse(response);
+
+  if (!response.ok) {
+    throw new TrendyolApiError(
+      `Trendyol onay bekleyen Ã¼rÃ¼n isteÄŸi ${response.status} ile reddedildi.`,
       body,
     );
   }
