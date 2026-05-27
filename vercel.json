@@ -2,5 +2,11 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "buildCommand": "npm run build",
+  "crons": [
+    {
+      "path": "/api/trendyol/auto-accept",
+      "schedule": "*/5 * * * *"
+    }
+  ],
   "outputDirectory": null
 }

@@ -32,3 +32,9 @@ ON product_drafts (created_at DESC);
 
 CREATE INDEX IF NOT EXISTS product_drafts_status_idx
 ON product_drafts (status);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

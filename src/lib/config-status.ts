@@ -106,6 +106,13 @@ export function getRuntimeConfigStatus() {
       note: "İsteğe bağlı kayıt alanı. Product Create V2 auth header'ında kullanılmaz.",
       required: false,
     },
+    {
+      configured: hasValue("CRON_SECRET") || hasValue("TRENDYOL_AUTO_ACCEPT_SECRET"),
+      key: "CRON_SECRET",
+      label: "Otomatik kabul cron secret",
+      note: "Opsiyonel. Vercel cron endpoint'ini dış tetiklemelere karşı korur.",
+      required: false,
+    },
   ];
 
   return {

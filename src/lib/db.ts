@@ -40,6 +40,22 @@ export type ProductDraft = {
   vatRate: number;
 };
 
+export type AutoAcceptRunResult = {
+  accepted: number;
+  checked: number;
+  errors: string[];
+  failed: number;
+  message: string;
+  ranAt: string;
+  skipped: boolean;
+};
+
+export type AutoAcceptSettings = {
+  enabled: boolean;
+  lastResult: AutoAcceptRunResult | null;
+  updatedAt: Date | null;
+};
+
 type ProductRow = {
   attributes: TrendyolAttributeInput[];
   barcode: string;
@@ -67,6 +83,12 @@ type ProductRow = {
   trendyol_response: unknown;
   updated_at: Date | string;
   vat_rate: number | string;
+};
+
+type AppSettingRow = {
+  key: string;
+  updated_at: Date | string;
+  value: unknown;
 };
 
 type NewDraft = {
@@ -113,6 +135,7 @@ type GlobalSql = typeof globalThis & {
 };
 
 const globalSql = globalThis as GlobalSql;
+const autoAcceptSettingKey = "auto_accept_orders";
 
 function getSql() {
   if (!globalSql.figyfunSql) {
@@ -170,6 +193,13 @@ async function ensureSchema() {
         CREATE INDEX IF NOT EXISTS product_drafts_status_idx
         ON product_drafts (status)
       `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS app_settings (
+          key TEXT PRIMARY KEY,
+          value JSONB NOT NULL DEFAULT '{}'::jsonb,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
     })();
   }
 
@@ -213,6 +243,76 @@ function generatedCode(prefix: string, updateId: string) {
 
 function toJsonValue(value: unknown) {
   return JSON.parse(JSON.stringify(value ?? null)) as postgres.JSONValue;
+}
+
+function normalizeAutoAcceptSettings(row?: AppSettingRow): AutoAcceptSettings {
+  const value =
+    row?.value && typeof row.value === "object"
+      ? (row.value as Partial<{
+          enabled: unknown;
+          lastResult: unknown;
+        }>)
+      : {};
+  const lastResult =
+    value.lastResult && typeof value.lastResult === "object"
+      ? (value.lastResult as AutoAcceptRunResult)
+      : null;
+
+  return {
+    enabled: value.enabled === true,
+    lastResult,
+    updatedAt: row ? new Date(row.updated_at) : null,
+  };
+}
+
+export async function getAutoAcceptSettings() {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql<AppSettingRow[]>`
+    SELECT * FROM app_settings
+    WHERE key = ${autoAcceptSettingKey}
+    LIMIT 1
+  `;
+
+  return normalizeAutoAcceptSettings(rows[0]);
+}
+
+export async function setAutoAcceptEnabled(enabled: boolean) {
+  await ensureSchema();
+  const sql = getSql();
+  const current = await getAutoAcceptSettings();
+  const value = {
+    enabled,
+    lastResult: current.lastResult,
+  };
+  const rows = await sql<AppSettingRow[]>`
+    INSERT INTO app_settings (key, value)
+    VALUES (${autoAcceptSettingKey}, ${sql.json(toJsonValue(value))})
+    ON CONFLICT (key) DO UPDATE
+    SET value = EXCLUDED.value, updated_at = NOW()
+    RETURNING *
+  `;
+
+  return normalizeAutoAcceptSettings(rows[0]);
+}
+
+export async function saveAutoAcceptRunResult(result: AutoAcceptRunResult) {
+  await ensureSchema();
+  const sql = getSql();
+  const current = await getAutoAcceptSettings();
+  const value = {
+    enabled: current.enabled,
+    lastResult: result,
+  };
+  const rows = await sql<AppSettingRow[]>`
+    INSERT INTO app_settings (key, value)
+    VALUES (${autoAcceptSettingKey}, ${sql.json(toJsonValue(value))})
+    ON CONFLICT (key) DO UPDATE
+    SET value = EXCLUDED.value, updated_at = NOW()
+    RETURNING *
+  `;
+
+  return normalizeAutoAcceptSettings(rows[0]);
 }
 
 export async function findDraftByTelegramUpdateId(updateId: string) {

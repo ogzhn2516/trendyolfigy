@@ -4,6 +4,46 @@ import type { ProductDraft } from "@/lib/db";
 import { getTrendyolConfig } from "@/lib/env";
 
 type TrendyolResponse = Record<string, unknown>;
+type QueryValue = boolean | number | string | undefined;
+
+type ShipmentPackageQuery = {
+  endDate?: number;
+  orderByDirection?: "ASC" | "DESC";
+  orderByField?: "CreatedDate" | "PackageLastModifiedDate";
+  orderNumber?: string;
+  page?: number;
+  shipmentPackageIds?: number | string;
+  size?: number;
+  startDate?: number;
+  status?: string;
+};
+
+type ClaimsQuery = {
+  claimIds?: string;
+  claimItemStatus?: string;
+  endDate?: number;
+  orderNumber?: string;
+  page?: number;
+  size?: number;
+  startDate?: number;
+};
+
+type FinancialQuery = {
+  endDate: number;
+  page?: number;
+  paymentDate?: string;
+  paymentOrderId?: number | string;
+  size?: 500 | 1000;
+  startDate: number;
+  transactionSubType?: string;
+  transactionType?: string;
+  transactionTypes?: string;
+};
+
+type ShipmentPackageLineUpdate = {
+  lineId: number;
+  quantity: number;
+};
 
 function getHeaders() {
   const config = getTrendyolConfig();
@@ -25,6 +65,20 @@ function getHeaders() {
 
 function getBaseUrl() {
   return getTrendyolConfig().TRENDYOL_BASE_URL ?? "https://apigw.trendyol.com";
+}
+
+function withQuery(url: string, params: Record<string, QueryValue>) {
+  const searchParams = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== "") {
+      searchParams.set(key, String(value));
+    }
+  }
+
+  const query = searchParams.toString();
+
+  return query ? `${url}?${query}` : url;
 }
 
 function escapeHtml(value: string) {
@@ -132,6 +186,134 @@ export async function getCategoryAttributes(categoryId: number) {
   if (!response.ok) {
     throw new TrendyolApiError(
       `Kategori özellik isteği ${response.status} ile reddedildi.`,
+      body,
+    );
+  }
+
+  return body;
+}
+
+export async function getShipmentPackages(params: ShipmentPackageQuery = {}) {
+  const config = getTrendyolConfig();
+  const response = await fetch(
+    withQuery(
+      `${getBaseUrl()}/integration/order/sellers/${config.TRENDYOL_SELLER_ID}/orders`,
+      params,
+    ),
+    {
+      cache: "no-store",
+      headers: getHeaders(),
+    },
+  );
+  const body = await readResponse(response);
+
+  if (!response.ok) {
+    throw new TrendyolApiError(
+      `Trendyol sipariÅŸ isteÄŸi ${response.status} ile reddedildi.`,
+      body,
+    );
+  }
+
+  return body;
+}
+
+export async function getReturnClaims(params: ClaimsQuery = {}) {
+  const config = getTrendyolConfig();
+  const response = await fetch(
+    withQuery(
+      `${getBaseUrl()}/integration/order/sellers/${config.TRENDYOL_SELLER_ID}/claims`,
+      params,
+    ),
+    {
+      cache: "no-store",
+      headers: getHeaders(),
+    },
+  );
+  const body = await readResponse(response);
+
+  if (!response.ok) {
+    throw new TrendyolApiError(
+      `Trendyol iade isteÄŸi ${response.status} ile reddedildi.`,
+      body,
+    );
+  }
+
+  return body;
+}
+
+export async function getSettlements(params: FinancialQuery) {
+  const config = getTrendyolConfig();
+  const response = await fetch(
+    withQuery(
+      `${getBaseUrl()}/integration/finance/che/sellers/${config.TRENDYOL_SELLER_ID}/settlements`,
+      params,
+    ),
+    {
+      cache: "no-store",
+      headers: getHeaders(),
+    },
+  );
+  const body = await readResponse(response);
+
+  if (!response.ok) {
+    throw new TrendyolApiError(
+      `Trendyol cari hesap isteÄŸi ${response.status} ile reddedildi.`,
+      body,
+    );
+  }
+
+  return body;
+}
+
+export async function getOtherFinancials(params: FinancialQuery) {
+  const config = getTrendyolConfig();
+  const response = await fetch(
+    withQuery(
+      `${getBaseUrl()}/integration/finance/che/sellers/${config.TRENDYOL_SELLER_ID}/otherfinancials`,
+      params,
+    ),
+    {
+      cache: "no-store",
+      headers: getHeaders(),
+    },
+  );
+  const body = await readResponse(response);
+
+  if (!response.ok) {
+    throw new TrendyolApiError(
+      `Trendyol Ã¶deme isteÄŸi ${response.status} ile reddedildi.`,
+      body,
+    );
+  }
+
+  return body;
+}
+
+export async function updateShipmentPackageStatus(
+  packageId: number | string,
+  lines: ShipmentPackageLineUpdate[],
+  status: "Invoiced" | "Picking",
+  params: Record<string, string> = {},
+) {
+  const config = getTrendyolConfig();
+  const response = await fetch(
+    `${getBaseUrl()}/integration/order/sellers/${config.TRENDYOL_SELLER_ID}/shipment-packages/${packageId}`,
+    {
+      body: JSON.stringify({
+        lines,
+        params,
+        status,
+      }),
+      cache: "no-store",
+      headers: getHeaders(),
+      method: "PUT",
+    },
+  );
+  const body = await readResponse(response);
+
+  if (!response.ok) {
+    throw new TrendyolApiError(
+      `Trendyol paket statÃ¼ isteÄŸi ${response.status} ile reddedildi.`,
       body,
     );
   }

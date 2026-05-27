@@ -6,8 +6,10 @@ import { z } from "zod";
 
 import { clearAdminSession, isAdminAuthenticated } from "@/lib/auth";
 import type { TrendyolAttributeInput } from "@/lib/caption";
+import { setAutoAcceptEnabled } from "@/lib/db";
 import { updateDraft } from "@/lib/db";
 import { submitDraftToTrendyol } from "@/lib/products";
+import { runAutoAcceptOrders } from "@/lib/trendyol-dashboard";
 
 const attributeSchema = z.array(
   z.object({
@@ -79,6 +81,25 @@ export async function updateDraftAction(id: string, formData: FormData) {
 export async function submitDraftAction(id: string) {
   await requireActionAuth();
   await submitDraftToTrendyol(id);
+  revalidatePath("/admin");
+}
+
+export async function updateAutoAcceptAction(formData: FormData) {
+  await requireActionAuth();
+
+  const enabled = formData.get("autoAcceptOrders") === "on";
+  await setAutoAcceptEnabled(enabled);
+
+  if (enabled) {
+    await runAutoAcceptOrders();
+  }
+
+  revalidatePath("/admin");
+}
+
+export async function runAutoAcceptAction() {
+  await requireActionAuth();
+  await runAutoAcceptOrders({ force: true });
   revalidatePath("/admin");
 }
 

@@ -41,6 +41,7 @@ TRENDYOL_STORE_FRONT_CODE=
 TRENDYOL_BASE_URL=https://apigw.trendyol.com
 BLOB_READ_WRITE_TOKEN=
 DATABASE_URL=
+CRON_SECRET=
 ```
 
 `ADMIN_SESSION_SECRET` must be at least 32 characters.
@@ -138,6 +139,22 @@ The Telegram file URL is not used as the public product image URL.
 
 When `DATABASE_URL` exists, the app creates `product_drafts` on first access.
 The manual SQL is also available in [database/schema.sql](database/schema.sql).
+
+## Admin Operations Panel
+
+The `/admin` page also shows Trendyol order, return, payment, and performance
+signals when `DATABASE_URL` and Trendyol API credentials are configured.
+
+- Orders are read from the last 14 days because Trendyol limits the standard
+  order query window.
+- Returns are read from the latest claim records.
+- Finance uses current account `settlements` and `otherfinancials` services.
+- The auto-accept checkbox stores its setting in Postgres and the Vercel cron
+  route checks every 5 minutes. When enabled, Created packages are moved to
+  Picking status.
+
+Set `CRON_SECRET` in Vercel to protect the cron endpoint. Vercel Cron sends it
+as a bearer token automatically when configured.
 
 ## Telegram Webhook
 

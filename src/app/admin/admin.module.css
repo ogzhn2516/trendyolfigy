@@ -164,6 +164,249 @@
   color: var(--danger);
 }
 
+.operations {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.operationsLead {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+  gap: 16px;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  background: var(--panel);
+}
+
+.operationsLead p,
+.operationsLead span,
+.sectionTitle span,
+.opsMetrics p,
+.performanceList dt,
+.recommendations,
+.autoAccept p {
+  color: var(--muted);
+}
+
+.operationsLead h2 {
+  margin: 6px 0 8px;
+  font-size: 1.55rem;
+  line-height: 1.15;
+}
+
+.autoAccept {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px;
+  background: var(--panel-strong);
+}
+
+.autoAccept label {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.autoAccept input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: var(--success);
+}
+
+.autoAccept span {
+  display: grid;
+  gap: 4px;
+  line-height: 1.35;
+}
+
+.autoAcceptActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.autoAcceptActions button,
+.opsSection button {
+  min-height: 38px;
+  border: 1px solid #176547;
+  border-radius: 6px;
+  padding: 0 12px;
+  color: #fff;
+  background: #176547;
+  font-weight: 700;
+}
+
+.autoAcceptActions button + button {
+  color: var(--foreground);
+  border-color: var(--border);
+  background: #fff;
+}
+
+.autoAcceptActions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.opsMetrics {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.opsMetrics div,
+.opsSection {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-strong);
+}
+
+.opsMetrics div {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 16px;
+}
+
+.opsMetrics span {
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.opsMetrics strong {
+  overflow-wrap: anywhere;
+  font-size: 1.45rem;
+  line-height: 1.05;
+}
+
+.opsErrors {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(159, 51, 45, 0.2);
+  border-radius: 8px;
+  padding: 14px;
+  color: var(--danger);
+  background: rgba(159, 51, 45, 0.08);
+}
+
+.opsGrid,
+.insightGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.opsSection {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 16px;
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sectionTitle h3 {
+  font-size: 1.1rem;
+}
+
+.statusGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.statusGrid div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  background: var(--panel);
+}
+
+.statusGrid span {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.statusGrid strong {
+  font-size: 1.25rem;
+}
+
+.tableWrap {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.tableWrap table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.tableWrap th,
+.tableWrap td {
+  border-bottom: 1px solid var(--border);
+  padding: 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.tableWrap th {
+  color: var(--muted);
+  background: var(--panel);
+  font-size: 0.78rem;
+}
+
+.tableWrap tr:last-child td {
+  border-bottom: 0;
+}
+
+.performanceList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.performanceList div {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  background: var(--panel);
+}
+
+.performanceList dd {
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+
+.recommendations {
+  display: grid;
+  gap: 10px;
+  padding-left: 18px;
+  line-height: 1.45;
+}
+
 .queue {
   display: grid;
   gap: 18px;
@@ -340,7 +583,17 @@
     padding: 18px;
   }
 
+  .operationsLead,
   .draft {
+    grid-template-columns: 1fr;
+  }
+
+  .opsMetrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .opsGrid,
+  .insightGrid {
     grid-template-columns: 1fr;
   }
 
@@ -359,7 +612,10 @@
 
   .metrics,
   .configGrid,
-  .fieldGrid {
+  .fieldGrid,
+  .opsMetrics,
+  .performanceList,
+  .statusGrid {
     grid-template-columns: 1fr;
   }
 
