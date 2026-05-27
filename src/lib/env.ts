@@ -35,6 +35,7 @@ const trendyolSchema = z.object({
   CRON_SECRET: optionalText,
   TRENDYOL_API_KEY: z.string().min(1),
   TRENDYOL_API_SECRET: z.string().min(1),
+  TRENDYOL_AUTO_ACCEPT_ENABLED: optionalText,
   TRENDYOL_AUTO_ACCEPT_SECRET: optionalText,
   TRENDYOL_BASE_URL: optionalUrl,
   TRENDYOL_BRAND_ID: optionalPositiveInteger,

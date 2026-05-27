@@ -154,6 +154,9 @@ signals when `DATABASE_URL` and Trendyol API credentials are configured.
   to Picking status. Use the admin panel's manual accept button for immediate
   processing, or upgrade to Pro / use an external cron service for frequent
   checks.
+- Without `DATABASE_URL`, the manual accept button still works. Set
+  `TRENDYOL_AUTO_ACCEPT_ENABLED=true` in Vercel if you want the daily cron to run
+  auto-accept without storing the checkbox state in Postgres.
 
 Set `CRON_SECRET` in Vercel to protect the cron endpoint. Vercel Cron sends it
 as a bearer token automatically when configured.

@@ -225,7 +225,6 @@ export default async function AdminPage() {
                   Kaydet
                 </button>
                 <button
-                  disabled={!dashboard.autoAcceptReady}
                   formAction={runAutoAcceptAction}
                   type="submit"
                 >
@@ -233,7 +232,10 @@ export default async function AdminPage() {
                 </button>
               </div>
               {!dashboard.autoAcceptReady ? (
-                <p>Otomatik kabul tikini saklamak için DATABASE_URL gerekir.</p>
+                <p>
+                  Kalıcı tik için DATABASE_URL gerekir. Şimdi kabul et düğmesi
+                  yine çalışır.
+                </p>
               ) : dashboard.autoAccept.lastResult ? (
                 <p>
                   Son çalışma:{" "}

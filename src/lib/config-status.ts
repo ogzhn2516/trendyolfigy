@@ -113,6 +113,13 @@ export function getRuntimeConfigStatus() {
       note: "Opsiyonel. Vercel cron endpoint'ini dış tetiklemelere karşı korur.",
       required: false,
     },
+    {
+      configured: hasValue("TRENDYOL_AUTO_ACCEPT_ENABLED"),
+      key: "TRENDYOL_AUTO_ACCEPT_ENABLED",
+      label: "DB olmadan otomatik kabul",
+      note: "Opsiyonel. true olursa DATABASE_URL yokken günlük cron otomatik kabul çalıştırır.",
+      required: false,
+    },
   ];
 
   return {

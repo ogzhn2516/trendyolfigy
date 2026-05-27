@@ -231,8 +231,12 @@ function recommendationText(input: {
 }
 
 function defaultAutoAcceptSettings() {
+  const envEnabled = ["1", "true", "yes", "on"].includes(
+    (process.env.TRENDYOL_AUTO_ACCEPT_ENABLED ?? "").trim().toLowerCase(),
+  );
+
   return {
-    enabled: false,
+    enabled: envEnabled,
     lastResult: null,
     updatedAt: null,
   };
