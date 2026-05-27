@@ -85,6 +85,17 @@ origin `TR`, no battery operation, unspecified age, and no batteries included.
 Optional caption lines such as `Liste Fiyati`, `Kategori`, `Stok`, `KDV`,
 `Desi`, and `Ozellikler` still override those defaults.
 
+For home decorative objects and figurines, add the category shortcut:
+
+```text
+Kategori: ev
+```
+
+That shortcut sends products to Trendyol category `1877` (`Dekoratif Obje ve
+Biblo`) with quantity `1000`, VAT `20`, dimensional weight `1`, and required
+defaults for multicolor, one piece, modern style, poliresin material, and
+origin `TR`.
+
 Optional generated-code overrides:
 
 ```text
