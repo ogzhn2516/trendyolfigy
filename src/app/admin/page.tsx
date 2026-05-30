@@ -2,9 +2,12 @@ import { redirect } from "next/navigation";
 
 import {
   logoutAction,
+  runBulkPriceChangeAction,
   runAutoAcceptAction,
+  runRepricerAction,
   submitDraftAction,
   updateAutoAcceptAction,
+  updateCommerceSettingsAction,
   updateDraftAction,
 } from "@/app/admin/actions";
 import { CategoryAttributesPanel } from "@/components/category-attributes-panel";
@@ -14,6 +17,7 @@ import { getRuntimeConfigStatus } from "@/lib/config-status";
 import type { ProductDraft } from "@/lib/db";
 import { listDrafts } from "@/lib/db";
 import { hasDatabaseUrl } from "@/lib/env";
+import { getCommerceDashboardData } from "@/lib/trendyol-commerce-intelligence";
 import {
   dashboardOrderRows,
   dashboardReturnRows,
@@ -79,6 +83,13 @@ function formatNumber(value: number) {
   return value.toLocaleString("tr-TR");
 }
 
+function formatDecimal(value: number) {
+  return value.toLocaleString("tr-TR", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+  });
+}
+
 function formatDateTime(value: Date | null | undefined) {
   if (!value || Number.isNaN(value.getTime())) {
     return "Yok";
@@ -88,6 +99,18 @@ function formatDateTime(value: Date | null | undefined) {
     dateStyle: "short",
     timeStyle: "short",
   });
+}
+
+function formatDays(value: number | null) {
+  if (value === null) {
+    return "Satış verisi yok";
+  }
+
+  if (value <= 0) {
+    return "Bugün biter";
+  }
+
+  return `${formatNumber(value)} gün`;
 }
 
 export default async function AdminPage() {
@@ -103,6 +126,10 @@ export default async function AdminPage() {
     | Awaited<ReturnType<typeof getOperationsDashboardData>>
     | null = null;
   let dashboardError = "";
+  let commerce:
+    | Awaited<ReturnType<typeof getCommerceDashboardData>>
+    | null = null;
+  let commerceError = "";
 
   if (queueEnabled) {
     try {
@@ -120,6 +147,13 @@ export default async function AdminPage() {
       error instanceof Error ? error.message : "Operasyon paneli okunamadı.";
   }
 
+  try {
+    commerce = await getCommerceDashboardData();
+  } catch (error) {
+    commerceError =
+      error instanceof Error ? error.message : "Ticaret zekası paneli okunamadı.";
+  }
+
   return (
     <main className={styles.page}>
       <header className={styles.header}>
@@ -133,6 +167,339 @@ export default async function AdminPage() {
       </header>
 
       <LiveProductMetrics />
+
+      {commerce ? (
+        <section className={styles.commercePanel}>
+          <div className={styles.commerceLead}>
+            <div>
+              <p>Ticaret zekası</p>
+              <h2>BuyBox, repricer, kâr, stok ve listing kalite</h2>
+              <span>
+                İlk 100 onaylı satıştaki ürün izlenir; BuyBox resmi endpoint
+                limiti nedeniyle ilk 10 barkod canlı sorgulanır.
+              </span>
+            </div>
+            <form action={runRepricerAction} className={styles.repricerCard}>
+              <strong>Otomatik fiyatlandırma</strong>
+              <p>
+                Rakip BuyBox fiyatının {formatDecimal(commerce.settings.undercutAmount)} TL altını hedefler,
+                min kâr tabanının altına inmez.
+              </p>
+              <button type="submit">Repricer uygula</button>
+            </form>
+          </div>
+
+          <div className={styles.opsMetrics}>
+            <div>
+              <span>İzlenen ürün</span>
+              <strong>{formatNumber(commerce.trackedProducts)}</strong>
+              <p>Onaylı ve satışta</p>
+            </div>
+            <div>
+              <span>BuyBox kaybı</span>
+              <strong>{formatNumber(commerce.buyboxLost)}</strong>
+              <p>İlk 10 barkod canlı</p>
+            </div>
+            <div>
+              <span>Repricer hazır</span>
+              <strong>{formatNumber(commerce.repricerReady)}</strong>
+              <p>Fiyat önerisi var</p>
+            </div>
+            <div>
+              <span>Stok riski</span>
+              <strong>{formatNumber(commerce.stockWarnings)}</strong>
+              <p>Yakında bitebilir</p>
+            </div>
+            <div>
+              <span>14g tahmini kâr</span>
+              <strong>{formatMoney(commerce.totalProfit)}</strong>
+              <p>Maliyet ayarına göre</p>
+            </div>
+            <div>
+              <span>Kalite skoru</span>
+              <strong>{formatDecimal(commerce.averageQuality)}</strong>
+              <p>Başlık, açıklama, görsel</p>
+            </div>
+          </div>
+
+          {commerce.errors.length > 0 ? (
+            <div className={styles.opsErrors}>
+              {commerce.errors.map((error) => (
+                <p key={error.area}>
+                  <strong>{error.area}:</strong> {error.message}
+                </p>
+              ))}
+            </div>
+          ) : null}
+
+          <div className={styles.commerceGrid}>
+            <section className={styles.opsSection}>
+              <div className={styles.sectionTitle}>
+                <h3>Kâr ve komisyon ayarı</h3>
+                <span>
+                  {commerce.databaseBacked ? "Kalıcı ayar" : "DATABASE_URL yok"}
+                </span>
+              </div>
+              <form
+                action={updateCommerceSettingsAction}
+                className={styles.settingsForm}
+              >
+                <label>
+                  Komisyon %
+                  <input
+                    defaultValue={commerce.settings.defaultCommissionRate}
+                    min="0"
+                    max="60"
+                    name="defaultCommissionRate"
+                    step="0.1"
+                    type="number"
+                  />
+                </label>
+                <label>
+                  Hedef kâr %
+                  <input
+                    defaultValue={commerce.settings.targetMarginRate}
+                    min="0"
+                    max="80"
+                    name="targetMarginRate"
+                    step="0.1"
+                    type="number"
+                  />
+                </label>
+                <label>
+                  Ürün maliyeti
+                  <input
+                    defaultValue={commerce.settings.productCost}
+                    min="0"
+                    name="productCost"
+                    step="0.01"
+                    type="number"
+                  />
+                </label>
+                <label>
+                  Kargo maliyeti
+                  <input
+                    defaultValue={commerce.settings.shippingCost}
+                    min="0"
+                    name="shippingCost"
+                    step="0.01"
+                    type="number"
+                  />
+                </label>
+                <label>
+                  Sabit gider
+                  <input
+                    defaultValue={commerce.settings.fixedCost}
+                    min="0"
+                    name="fixedCost"
+                    step="0.01"
+                    type="number"
+                  />
+                </label>
+                <label>
+                  Min fiyat
+                  <input
+                    defaultValue={commerce.settings.minPrice}
+                    min="0.01"
+                    name="minPrice"
+                    step="0.01"
+                    type="number"
+                  />
+                </label>
+                <label>
+                  Max fiyat
+                  <input
+                    defaultValue={commerce.settings.maxPrice}
+                    min="0.01"
+                    name="maxPrice"
+                    step="0.01"
+                    type="number"
+                  />
+                </label>
+                <label>
+                  Rakibin altına
+                  <input
+                    defaultValue={commerce.settings.undercutAmount}
+                    min="0.01"
+                    name="undercutAmount"
+                    step="0.01"
+                    type="number"
+                  />
+                </label>
+                <label>
+                  Repricer dakika
+                  <input
+                    defaultValue={commerce.settings.repricerIntervalMinutes}
+                    min="15"
+                    max="120"
+                    name="repricerIntervalMinutes"
+                    step="15"
+                    type="number"
+                  />
+                </label>
+                <label className={styles.checkLine}>
+                  <input
+                    defaultChecked={commerce.settings.repricerEnabled}
+                    name="repricerEnabled"
+                    type="checkbox"
+                  />
+                  Otomatik repricer açık
+                </label>
+                <label>
+                  Stok uyarı günü
+                  <input
+                    defaultValue={commerce.settings.stockWarningDays}
+                    min="1"
+                    max="90"
+                    name="stockWarningDays"
+                    type="number"
+                  />
+                </label>
+                <button disabled={!commerce.databaseBacked} type="submit">
+                  Ayarları kaydet
+                </button>
+                {!commerce.databaseBacked ? (
+                  <p>Bu ayarları saklamak için DATABASE_URL gerekir.</p>
+                ) : null}
+              </form>
+            </section>
+
+            <section className={styles.opsSection}>
+              <div className={styles.sectionTitle}>
+                <h3>Toplu fiyat değişikliği</h3>
+                <span>Min/Max ve kâr tabanı korunur</span>
+              </div>
+              <form action={runBulkPriceChangeAction} className={styles.bulkForm}>
+                <label>
+                  Yüzde değişim
+                  <input
+                    defaultValue={0}
+                    max="300"
+                    min="-80"
+                    name="percent"
+                    step="0.1"
+                    type="number"
+                  />
+                </label>
+                <button type="submit">Toplu fiyat uygula</button>
+                <p>
+                  Örnek: -10 yazarsan fiyatları %10 düşürür, 15 yazarsan %15
+                  artırır. Trendyol işlem sonucunu batch kuyruğuna alır.
+                </p>
+              </form>
+
+              <div className={styles.ruleList}>
+                <div>
+                  <span>BuyBox kuralı</span>
+                  <strong>Rakipten {formatDecimal(commerce.settings.undercutAmount)} TL düşük</strong>
+                </div>
+                <div>
+                  <span>Kâr koruması</span>
+                  <strong>{formatPercent(commerce.settings.targetMarginRate)} hedef marj</strong>
+                </div>
+                <div>
+                  <span>Güncelleme planı</span>
+                  <strong>
+                    {commerce.settings.repricerEnabled ? "Açık" : "Kapalı"} ·{" "}
+                    {formatNumber(commerce.settings.repricerIntervalMinutes)} dk
+                  </strong>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <section className={styles.opsSection}>
+            <div className={styles.sectionTitle}>
+              <h3>Ürün karar ekranı</h3>
+              <span>BuyBox, stok, kâr ve SEO</span>
+            </div>
+            <div className={styles.tableWrap}>
+              <table className={styles.commerceTable}>
+                <thead>
+                  <tr>
+                    <th>Ürün</th>
+                    <th>BuyBox</th>
+                    <th>Fiyat</th>
+                    <th>Öneri</th>
+                    <th>Kâr</th>
+                    <th>Stok</th>
+                    <th>Kalite</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {commerce.products.length > 0 ? (
+                    commerce.products.map((product) => (
+                      <tr key={`${product.barcode}-${product.stockCode}`}>
+                        <td>
+                          <strong>{product.title || product.barcode}</strong>
+                          <span>{product.category}</span>
+                          <code>{product.barcode}</code>
+                        </td>
+                        <td>
+                          {product.buyboxOrder ? (
+                            <>
+                              <strong>#{product.buyboxOrder}</strong>
+                              <span>
+                                BuyBox {formatMoney(product.buyboxPrice ?? 0)}
+                              </span>
+                              {product.secondBuyboxPrice ? (
+                                <span>2. fiyat {formatMoney(product.secondBuyboxPrice)}</span>
+                              ) : null}
+                            </>
+                          ) : (
+                            <span>Canlı veri yok</span>
+                          )}
+                        </td>
+                        <td>
+                          <strong>{formatMoney(product.salePrice)}</strong>
+                          <span>Liste {formatMoney(product.listPrice)}</span>
+                          <span>Komisyon {formatPercent(product.commissionRate)}</span>
+                        </td>
+                        <td>
+                          {product.recommendedPrice ? (
+                            <>
+                              <strong>{formatMoney(product.recommendedPrice)}</strong>
+                              <span>Min {formatMoney(product.minPrice)}</span>
+                            </>
+                          ) : (
+                            <span>Fiyat korunur</span>
+                          )}
+                        </td>
+                        <td>
+                          <strong>{formatMoney(product.currentProfit)}</strong>
+                          <span>Marj {formatPercent(product.profitMargin)}</span>
+                        </td>
+                        <td>
+                          <strong>{formatNumber(product.quantity)}</strong>
+                          <span>{formatDays(product.daysUntilStockout)}</span>
+                          <span>{product.salesLast14Days} satış / 14g</span>
+                        </td>
+                        <td>
+                          <strong>{formatDecimal(product.qualityScore)}</strong>
+                          {product.qualityIssues.length > 0 ? (
+                            <span>{product.qualityIssues[0]}</span>
+                          ) : (
+                            <span>İyi görünüyor</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={7}>Satışta onaylı ürün bulunamadı.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+      ) : (
+        <section className={styles.banner}>
+          <strong>Ticaret zekası paneli hazır değil.</strong>
+          <p>{commerceError || "Trendyol ürün ve BuyBox verileri okunamadı."}</p>
+        </section>
+      )}
 
       <section className={styles.configPanel}>
         <div className={styles.configLead}>

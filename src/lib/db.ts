@@ -56,6 +56,20 @@ export type AutoAcceptSettings = {
   updatedAt: Date | null;
 };
 
+export type CommerceSettings = {
+  defaultCommissionRate: number;
+  fixedCost: number;
+  maxPrice: number;
+  minPrice: number;
+  productCost: number;
+  repricerEnabled: boolean;
+  repricerIntervalMinutes: number;
+  shippingCost: number;
+  stockWarningDays: number;
+  targetMarginRate: number;
+  undercutAmount: number;
+};
+
 type ProductRow = {
   attributes: TrendyolAttributeInput[];
   barcode: string;
@@ -136,6 +150,21 @@ type GlobalSql = typeof globalThis & {
 
 const globalSql = globalThis as GlobalSql;
 const autoAcceptSettingKey = "auto_accept_orders";
+const commerceSettingKey = "commerce_settings";
+
+export const defaultCommerceSettings: CommerceSettings = {
+  defaultCommissionRate: 18,
+  fixedCost: 0,
+  maxPrice: 999999,
+  minPrice: 1,
+  productCost: 0,
+  repricerEnabled: false,
+  repricerIntervalMinutes: 30,
+  shippingCost: 0,
+  stockWarningDays: 5,
+  targetMarginRate: 12,
+  undercutAmount: 0.5,
+};
 
 function getSql() {
   if (!globalSql.figyfunSql) {
@@ -265,6 +294,48 @@ function normalizeAutoAcceptSettings(row?: AppSettingRow): AutoAcceptSettings {
   };
 }
 
+function numberSetting(value: unknown, fallback: number) {
+  const parsed = typeof value === "number" ? value : Number(value);
+
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeCommerceSettings(row?: AppSettingRow): CommerceSettings {
+  const value =
+    row?.value && typeof row.value === "object"
+      ? (row.value as Partial<Record<keyof CommerceSettings, unknown>>)
+      : {};
+
+  return {
+    defaultCommissionRate: numberSetting(
+      value.defaultCommissionRate,
+      defaultCommerceSettings.defaultCommissionRate,
+    ),
+    fixedCost: numberSetting(value.fixedCost, defaultCommerceSettings.fixedCost),
+    maxPrice: numberSetting(value.maxPrice, defaultCommerceSettings.maxPrice),
+    minPrice: numberSetting(value.minPrice, defaultCommerceSettings.minPrice),
+    productCost: numberSetting(value.productCost, defaultCommerceSettings.productCost),
+    repricerEnabled: value.repricerEnabled === true,
+    repricerIntervalMinutes: numberSetting(
+      value.repricerIntervalMinutes,
+      defaultCommerceSettings.repricerIntervalMinutes,
+    ),
+    shippingCost: numberSetting(value.shippingCost, defaultCommerceSettings.shippingCost),
+    stockWarningDays: numberSetting(
+      value.stockWarningDays,
+      defaultCommerceSettings.stockWarningDays,
+    ),
+    targetMarginRate: numberSetting(
+      value.targetMarginRate,
+      defaultCommerceSettings.targetMarginRate,
+    ),
+    undercutAmount: numberSetting(
+      value.undercutAmount,
+      defaultCommerceSettings.undercutAmount,
+    ),
+  };
+}
+
 export async function getAutoAcceptSettings() {
   await ensureSchema();
   const sql = getSql();
@@ -275,6 +346,32 @@ export async function getAutoAcceptSettings() {
   `;
 
   return normalizeAutoAcceptSettings(rows[0]);
+}
+
+export async function getCommerceSettings() {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql<AppSettingRow[]>`
+    SELECT * FROM app_settings
+    WHERE key = ${commerceSettingKey}
+    LIMIT 1
+  `;
+
+  return normalizeCommerceSettings(rows[0]);
+}
+
+export async function saveCommerceSettings(settings: CommerceSettings) {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql<AppSettingRow[]>`
+    INSERT INTO app_settings (key, value)
+    VALUES (${commerceSettingKey}, ${sql.json(toJsonValue(settings))})
+    ON CONFLICT (key) DO UPDATE
+    SET value = EXCLUDED.value, updated_at = NOW()
+    RETURNING *
+  `;
+
+  return normalizeCommerceSettings(rows[0]);
 }
 
 export async function setAutoAcceptEnabled(enabled: boolean) {

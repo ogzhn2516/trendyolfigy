@@ -48,13 +48,24 @@ type ShipmentPackageLineUpdate = {
 type ProductFilterQuery = {
   barcode?: string;
   brandIds?: string;
+  contentId?: string;
+  dateQueryType?: "CONTENT_MODIFIED_DATE" | "SELLER_CREATED_DATE" | "SELLER_MODIFIED_DATE" | "VARIANT_CREATED_DATE" | "VARIANT_MODIFIED_DATE";
+  endDate?: number;
   nextPageToken?: string;
   orderByDirection?: "ASC" | "DESC";
   page?: number;
   productMainId?: string;
   size?: number;
+  startDate?: number;
   status?: "archived" | "blacklisted" | "locked" | "notOnSale" | "onSale";
   stockCode?: string;
+};
+
+type PriceAndInventoryItem = {
+  barcode: string;
+  listPrice: number;
+  quantity: number;
+  salePrice: number;
 };
 
 function getHeaders() {
@@ -342,6 +353,52 @@ export async function getUnapprovedProducts(params: ProductFilterQuery = {}) {
   if (!response.ok) {
     throw new TrendyolApiError(
       `Trendyol onay bekleyen Ã¼rÃ¼n isteÄŸi ${response.status} ile reddedildi.`,
+      body,
+    );
+  }
+
+  return body;
+}
+
+export async function getProductBuyboxInformation(barcodes: string[]) {
+  const config = getTrendyolConfig();
+  const response = await fetch(
+    `${getBaseUrl()}/integration/product/sellers/${config.TRENDYOL_SELLER_ID}/products/buybox-information`,
+    {
+      body: JSON.stringify({ barcodes: barcodes.slice(0, 10) }),
+      cache: "no-store",
+      headers: getHeaders(),
+      method: "POST",
+    },
+  );
+  const body = await readResponse(response);
+
+  if (!response.ok) {
+    throw new TrendyolApiError(
+      `Trendyol BuyBox isteği ${response.status} ile reddedildi.`,
+      body,
+    );
+  }
+
+  return body;
+}
+
+export async function updatePriceAndInventory(items: PriceAndInventoryItem[]) {
+  const config = getTrendyolConfig();
+  const response = await fetch(
+    `${getBaseUrl()}/integration/inventory/sellers/${config.TRENDYOL_SELLER_ID}/products/price-and-inventory`,
+    {
+      body: JSON.stringify({ items: items.slice(0, 1000) }),
+      cache: "no-store",
+      headers: getHeaders(),
+      method: "POST",
+    },
+  );
+  const body = await readResponse(response);
+
+  if (!response.ok) {
+    throw new TrendyolApiError(
+      `Trendyol fiyat-stok isteği ${response.status} ile reddedildi.`,
       body,
     );
   }

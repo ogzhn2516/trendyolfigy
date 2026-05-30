@@ -120,6 +120,13 @@ export function getRuntimeConfigStatus() {
       note: "Opsiyonel. true olursa DATABASE_URL yokken günlük cron otomatik kabul çalıştırır.",
       required: false,
     },
+    {
+      configured: hasValue("TRENDYOL_REPRICER_SECRET"),
+      key: "TRENDYOL_REPRICER_SECRET",
+      label: "Repricer cron secret",
+      note: "Opsiyonel. /api/trendyol/repricer endpointini dış zamanlayıcı için korur.",
+      required: false,
+    },
   ];
 
   return {

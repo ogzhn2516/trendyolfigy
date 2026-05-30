@@ -185,13 +185,22 @@
   color: var(--danger);
 }
 
+.commercePanel,
 .operations {
-  order: 3;
   display: grid;
   gap: 16px;
   margin-bottom: 18px;
 }
 
+.commercePanel {
+  order: 3;
+}
+
+.operations {
+  order: 4;
+}
+
+.commerceLead,
 .operationsLead {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
@@ -203,20 +212,36 @@
   background: var(--panel);
 }
 
+.commerceLead p,
+.commerceLead span,
 .operationsLead p,
 .operationsLead span,
 .sectionTitle span,
 .opsMetrics p,
 .performanceList dt,
 .recommendations,
-.autoAccept p {
+.autoAccept p,
+.repricerCard p,
+.settingsForm p,
+.bulkForm p {
   color: var(--muted);
 }
 
+.commerceLead h2,
 .operationsLead h2 {
   margin: 6px 0 8px;
   font-size: 1.55rem;
   line-height: 1.15;
+}
+
+.repricerCard {
+  display: grid;
+  gap: 10px;
+  align-content: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px;
+  background: var(--panel-strong);
 }
 
 .autoAccept {
@@ -255,7 +280,8 @@
 }
 
 .autoAcceptActions button,
-.opsSection button {
+.opsSection button,
+.repricerCard button {
   min-height: 38px;
   border: 1px solid #176547;
   border-radius: 6px;
@@ -319,7 +345,8 @@
 }
 
 .opsGrid,
-.insightGrid {
+.insightGrid,
+.commerceGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
@@ -427,6 +454,104 @@
   gap: 10px;
   padding-left: 18px;
   line-height: 1.45;
+}
+
+.settingsForm {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settingsForm label,
+.bulkForm label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.settingsForm .checkLine {
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  min-height: 40px;
+  color: var(--foreground);
+}
+
+.settingsForm input,
+.bulkForm input {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 11px;
+  color: var(--foreground);
+  background: #fff;
+}
+
+.settingsForm .checkLine input {
+  width: 18px;
+  min-height: 18px;
+  accent-color: var(--success);
+}
+
+.settingsForm button,
+.settingsForm p,
+.bulkForm button,
+.bulkForm p {
+  grid-column: 1 / -1;
+}
+
+.settingsForm button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.bulkForm {
+  display: grid;
+  gap: 12px;
+}
+
+.ruleList {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ruleList div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  background: var(--panel);
+}
+
+.ruleList span,
+.commerceTable span,
+.commerceTable code {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.commerceTable td {
+  min-width: 130px;
+}
+
+.commerceTable td:first-child {
+  min-width: 240px;
+}
+
+.commerceTable td > strong,
+.commerceTable td > span,
+.commerceTable td > code {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.commerceTable code {
+  overflow-wrap: anywhere;
 }
 
 .queue {
@@ -606,6 +731,7 @@
     padding: 18px;
   }
 
+  .commerceLead,
   .operationsLead,
   .draft {
     grid-template-columns: 1fr;
@@ -616,7 +742,8 @@
   }
 
   .opsGrid,
-  .insightGrid {
+  .insightGrid,
+  .commerceGrid {
     grid-template-columns: 1fr;
   }
 
@@ -637,6 +764,8 @@
   .configGrid,
   .fieldGrid,
   .opsMetrics,
+  .settingsForm,
+  .ruleList,
   .performanceList,
   .statusGrid {
     grid-template-columns: 1fr;

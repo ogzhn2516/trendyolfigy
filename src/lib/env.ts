@@ -41,6 +41,7 @@ const trendyolSchema = z.object({
   TRENDYOL_BRAND_ID: optionalPositiveInteger,
   TRENDYOL_INTEGRATION_REFERENCE_CODE: optionalText,
   TRENDYOL_RETURNING_ADDRESS_ID: optionalPositiveInteger,
+  TRENDYOL_REPRICER_SECRET: optionalText,
   TRENDYOL_SELLER_ID: optionalText,
   TRENDYOL_SHIPMENT_ADDRESS_ID: optionalPositiveInteger,
   TRENDYOL_STORE_FRONT_CODE: optionalText,
