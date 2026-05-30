@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
@@ -81,14 +82,17 @@ function parseFormNumber(value: FormDataEntryValue | null) {
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
-function commerceRedirect(params: Record<string, number | string>): never {
-  const searchParams = new URLSearchParams();
-
-  for (const [key, value] of Object.entries(params)) {
-    searchParams.set(key, String(value));
-  }
-
-  redirect(`/admin?${searchParams.toString()}#commerce`);
+async function commerceRedirect(
+  params: Record<string, number | string>,
+): Promise<never> {
+  const cookieStore = await cookies();
+  cookieStore.set("figyfun_commerce_notice", JSON.stringify(params), {
+    httpOnly: true,
+    maxAge: 120,
+    path: "/",
+    sameSite: "lax",
+  });
+  redirect("/admin#commerce");
 }
 
 export async function updateDraftAction(id: string, formData: FormData) {
@@ -150,7 +154,7 @@ export async function updateCommerceSettingsAction(formData: FormData) {
   await requireActionAuth();
 
   if (!hasDatabaseUrl()) {
-    commerceRedirect({ notice: "database_missing" });
+    return await commerceRedirect({ notice: "database_missing" });
   }
 
   const parsed = commerceSettingsSchema.safeParse({
@@ -170,33 +174,29 @@ export async function updateCommerceSettingsAction(formData: FormData) {
   });
 
   if (!parsed.success) {
-    commerceRedirect({ notice: "settings_invalid" });
+    return await commerceRedirect({ notice: "settings_invalid" });
   }
 
   const settings = parsed.data;
 
   if (settings.maxPrice < settings.minPrice) {
-    commerceRedirect({ notice: "settings_range_error" });
+    return await commerceRedirect({ notice: "settings_range_error" });
   }
 
   await saveCommerceSettings(settings);
   revalidatePath("/admin");
-  commerceRedirect({ notice: "settings_saved" });
+  return await commerceRedirect({ notice: "settings_saved" });
 }
 
 export async function runRepricerAction() {
   await requireActionAuth();
 
+  let result: Awaited<ReturnType<typeof runRepricerUpdate>>;
+
   try {
-    const result = await runRepricerUpdate({ force: true });
-    revalidatePath("/admin");
-    commerceRedirect({
-      checked: result.checked,
-      notice: result.submitted > 0 ? "repricer_submitted" : "repricer_empty",
-      submitted: result.submitted,
-    });
+    result = await runRepricerUpdate({ force: true });
   } catch (error) {
-    commerceRedirect({
+    return await commerceRedirect({
       message:
         error instanceof Error
           ? error.message.slice(0, 180)
@@ -204,6 +204,13 @@ export async function runRepricerAction() {
       notice: "repricer_error",
     });
   }
+
+  revalidatePath("/admin");
+  return await commerceRedirect({
+    checked: result.checked,
+    notice: result.submitted > 0 ? "repricer_submitted" : "repricer_empty",
+    submitted: result.submitted,
+  });
 }
 
 export async function runBulkPriceChangeAction(formData: FormData) {

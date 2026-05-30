@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import {
@@ -105,6 +106,22 @@ function commerceNoticeOf(params: Record<string, string | string[] | undefined>)
   }
 }
 
+function commerceNoticeCookieParams(value: string | undefined) {
+  if (!value) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+
+    return Object.fromEntries(
+      Object.entries(parsed).map(([key, entry]) => [key, String(entry)]),
+    );
+  } catch {
+    return {};
+  }
+}
+
 function statusText(status: ProductDraft["status"]) {
   switch (status) {
     case "submitted":
@@ -186,7 +203,14 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   }
 
   const resolvedSearchParams = (await searchParams) ?? {};
-  const commerceNotice = commerceNoticeOf(resolvedSearchParams);
+  const cookieStore = await cookies();
+  const cookieNoticeParams = commerceNoticeCookieParams(
+    cookieStore.get("figyfun_commerce_notice")?.value,
+  );
+  const commerceNotice = commerceNoticeOf({
+    ...cookieNoticeParams,
+    ...resolvedSearchParams,
+  });
   const configStatus = getRuntimeConfigStatus();
   const queueEnabled = hasDatabaseUrl();
   let drafts: ProductDraft[] = [];
