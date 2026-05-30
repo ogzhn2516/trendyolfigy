@@ -96,19 +96,19 @@ export function LiveProductMetrics() {
   return (
     <section className={styles.metrics}>
       <div>
-        <span>Trendyol ürünleri</span>
+        <span>Ürün envanteri</span>
         <strong>{metrics.loading ? "..." : formatNumber(metrics.totalProducts)}</strong>
         <p>{updatedText}</p>
       </div>
       <div>
-        <span>Kuyrukta / onay bekleyen</span>
+        <span>Onay kuyruğu</span>
         <strong>{metrics.loading ? "..." : formatNumber(metrics.queuedProducts)}</strong>
         <p>30 saniyede bir yenilenir</p>
       </div>
       <div>
         <span>Onaylanan ürün</span>
         <strong>{metrics.loading ? "..." : formatNumber(metrics.approvedProducts)}</strong>
-        <p>{metrics.error ? "Sayaçta hata var" : "Trendyol onaylı ürün listesi"}</p>
+        <p>{metrics.error ? "Sayaçta hata var" : "Satışa hazır ürün listesi"}</p>
       </div>
       {metrics.error ? (
         <p className={styles.metricError}>{metrics.error}</p>

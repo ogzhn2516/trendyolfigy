@@ -158,22 +158,71 @@ export default async function AdminPage() {
     <main className={styles.page}>
       <header className={styles.header}>
         <div>
-          <p>Figyfun Telegram Bot</p>
-          <h1>Trendyol ürün yönetimi</h1>
+          <p>Figyfun Commerce Center</p>
+          <h1>Trendyol operasyon dashboardu</h1>
+          <span>Ürün, sipariş, BuyBox, stok ve kâr yönetimi tek panelde.</span>
         </div>
         <form action={logoutAction}>
           <button type="submit">Çıkış</button>
         </form>
       </header>
 
-      <LiveProductMetrics />
+      <nav className={styles.dashboardNav} aria-label="Admin bölümleri">
+        <a href="#dashboard">Dashboard</a>
+        <a href="#commerce">Ticaret zekası</a>
+        <a href="#operations">Operasyon</a>
+        <a href="#system">Sistem</a>
+        <a href="#drafts">Taslaklar</a>
+      </nav>
+
+      <section className={styles.commandCenter} id="dashboard">
+        <div className={styles.sectionHeader}>
+          <div>
+            <p>Genel bakış</p>
+            <h2>Canlı mağaza durumu</h2>
+          </div>
+          <span>Ürün sayaçları 30 saniyede bir yenilenir</span>
+        </div>
+
+        <LiveProductMetrics />
+
+        <div className={styles.dashboardStrip}>
+          <div>
+            <span>BuyBox alarmı</span>
+            <strong>{formatNumber(commerce?.buyboxLost ?? 0)}</strong>
+            <p>Kaybedilen pozisyon</p>
+          </div>
+          <div>
+            <span>Fiyat aksiyonu</span>
+            <strong>{formatNumber(commerce?.repricerReady ?? 0)}</strong>
+            <p>Repricer önerisi</p>
+          </div>
+          <div>
+            <span>Stok uyarısı</span>
+            <strong>{formatNumber(commerce?.stockWarnings ?? 0)}</strong>
+            <p>Yakında bitebilir</p>
+          </div>
+          <div>
+            <span>Sipariş aksiyonu</span>
+            <strong>{formatNumber(dashboard?.orders.createdCount ?? 0)}</strong>
+            <p>Kabul bekleyen</p>
+          </div>
+        </div>
+      </section>
 
       {commerce ? (
-        <section className={styles.commercePanel}>
-          <div className={styles.commerceLead}>
+        <section className={styles.commercePanel} id="commerce">
+          <div className={styles.sectionHeader}>
             <div>
               <p>Ticaret zekası</p>
               <h2>BuyBox, repricer, kâr, stok ve listing kalite</h2>
+            </div>
+            <span>Resmi API verileriyle fiyat ve stok karar ekranı</span>
+          </div>
+          <div className={styles.commerceLead}>
+            <div>
+              <p>Akıllı kontrol</p>
+              <h3>Ürünlerini kâr tabanını koruyarak yönet</h3>
               <span>
                 İlk 100 onaylı satıştaki ürün izlenir; BuyBox resmi endpoint
                 limiti nedeniyle ilk 10 barkod canlı sorgulanır.
@@ -501,7 +550,14 @@ export default async function AdminPage() {
         </section>
       )}
 
-      <section className={styles.configPanel}>
+      <section className={styles.configPanel} id="system">
+        <div className={styles.sectionHeader}>
+          <div>
+            <p>Sistem</p>
+            <h2>Bağlantı ve ortam durumu</h2>
+          </div>
+          <span>Eksik env varsa burada görünür</span>
+        </div>
         <div className={styles.configLead}>
           <div>
             <p>Çalışma modu</p>
@@ -528,22 +584,28 @@ export default async function AdminPage() {
           ve API Secret kullanılır. Entegrasyon Referans Kodu destek içindir;
           Token bu Product Create V2 isteğine eklenmez.
         </p>
-        <div className={styles.configGrid}>
-          {configStatus.items.map((item) => (
-            <div className={styles.configItem} key={item.key}>
-              <span
-                className={
-                  item.configured ? styles.configOk : styles.configMissing
-                }
-              >
-                {item.configured ? "Hazır" : item.required ? "Eksik" : "Opsiyonel"}
-              </span>
-              <strong>{item.label}</strong>
-              <code>{item.key}</code>
-              <p>{item.note}</p>
-            </div>
-          ))}
-        </div>
+        <details
+          className={styles.configDetails}
+          open={configStatus.missingRequired.length > 0}
+        >
+          <summary>Env ve entegrasyon detaylarını göster</summary>
+          <div className={styles.configGrid}>
+            {configStatus.items.map((item) => (
+              <div className={styles.configItem} key={item.key}>
+                <span
+                  className={
+                    item.configured ? styles.configOk : styles.configMissing
+                  }
+                >
+                  {item.configured ? "Hazır" : item.required ? "Eksik" : "Opsiyonel"}
+                </span>
+                <strong>{item.label}</strong>
+                <code>{item.key}</code>
+                <p>{item.note}</p>
+              </div>
+            ))}
+          </div>
+        </details>
       </section>
 
       {!queueEnabled ? (
@@ -565,11 +627,18 @@ export default async function AdminPage() {
       ) : null}
 
       {dashboard ? (
-        <section className={styles.operations}>
+        <section className={styles.operations} id="operations">
+          <div className={styles.sectionHeader}>
+            <div>
+              <p>Operasyon</p>
+              <h2>Sipariş, iade, ödeme ve performans</h2>
+            </div>
+            <span>Günlük iş akışını ayrı kartlarda takip et</span>
+          </div>
           <div className={styles.operationsLead}>
             <div>
-              <p>Canlı operasyon paneli</p>
-              <h2>Sipariş, iade, ödeme ve performans</h2>
+              <p>Canlı operasyon</p>
+              <h3>Sipariş kabul ve takip akışı</h3>
               <span>
                 Siparişler son 14 gün, iadeler son 30 gün, finans son 14 gün.
               </span>
@@ -805,7 +874,14 @@ export default async function AdminPage() {
         </section>
       )}
 
-      <section className={styles.queue}>
+      <section className={styles.queue} id="drafts">
+        <div className={styles.sectionHeader}>
+          <div>
+            <p>Ürün taslakları</p>
+            <h2>Telegramdan gelen ürün kuyruğu</h2>
+          </div>
+          <span>{formatNumber(drafts.length)} taslak</span>
+        </div>
         {drafts.map((draft) => (
           <article className={styles.draft} key={draft.id}>
             <div className={styles.preview}>
