@@ -7,7 +7,11 @@ import { z } from "zod";
 
 import { clearAdminSession, isAdminAuthenticated } from "@/lib/auth";
 import type { TrendyolAttributeInput } from "@/lib/caption";
-import { saveCommerceSettings, setAutoAcceptEnabled } from "@/lib/db";
+import {
+  saveCommerceActionNotice,
+  saveCommerceSettings,
+  setAutoAcceptEnabled,
+} from "@/lib/db";
 import { updateDraft } from "@/lib/db";
 import { hasDatabaseUrl } from "@/lib/env";
 import { submitDraftToTrendyol } from "@/lib/products";
@@ -85,6 +89,16 @@ function parseFormNumber(value: FormDataEntryValue | null) {
 async function commerceRedirect(
   params: Record<string, number | string>,
 ): Promise<never> {
+  if (hasDatabaseUrl()) {
+    await saveCommerceActionNotice({
+      checked: typeof params.checked === "number" ? params.checked : undefined,
+      message: typeof params.message === "string" ? params.message : undefined,
+      notice: String(params.notice),
+      submitted:
+        typeof params.submitted === "number" ? params.submitted : undefined,
+    });
+  }
+
   const cookieStore = await cookies();
   cookieStore.set("figyfun_commerce_notice", JSON.stringify(params), {
     httpOnly: true,

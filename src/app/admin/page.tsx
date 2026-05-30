@@ -16,7 +16,7 @@ import { LiveProductMetrics } from "@/components/live-product-metrics";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { getRuntimeConfigStatus } from "@/lib/config-status";
 import type { ProductDraft } from "@/lib/db";
-import { listDrafts } from "@/lib/db";
+import { getCommerceActionNotice, listDrafts } from "@/lib/db";
 import { hasDatabaseUrl } from "@/lib/env";
 import { getCommerceDashboardData } from "@/lib/trendyol-commerce-intelligence";
 import {
@@ -207,7 +207,18 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   const cookieNoticeParams = commerceNoticeCookieParams(
     cookieStore.get("figyfun_commerce_notice")?.value,
   );
+  const storedCommerceNotice = hasDatabaseUrl()
+    ? await getCommerceActionNotice()
+    : null;
   const commerceNotice = commerceNoticeOf({
+    ...(storedCommerceNotice
+      ? {
+          checked: String(storedCommerceNotice.checked ?? 0),
+          message: storedCommerceNotice.message,
+          notice: storedCommerceNotice.notice,
+          submitted: String(storedCommerceNotice.submitted ?? 0),
+        }
+      : {}),
     ...cookieNoticeParams,
     ...resolvedSearchParams,
   });

@@ -70,6 +70,14 @@ export type CommerceSettings = {
   undercutAmount: number;
 };
 
+export type CommerceActionNotice = {
+  checked?: number;
+  message?: string;
+  notice: string;
+  submitted?: number;
+  updatedAt: Date | null;
+};
+
 type ProductRow = {
   attributes: TrendyolAttributeInput[];
   barcode: string;
@@ -150,6 +158,7 @@ type GlobalSql = typeof globalThis & {
 
 const globalSql = globalThis as GlobalSql;
 const autoAcceptSettingKey = "auto_accept_orders";
+const commerceActionNoticeKey = "commerce_action_notice";
 const commerceSettingKey = "commerce_settings";
 
 export const defaultCommerceSettings: CommerceSettings = {
@@ -336,6 +345,27 @@ function normalizeCommerceSettings(row?: AppSettingRow): CommerceSettings {
   };
 }
 
+function normalizeCommerceActionNotice(row?: AppSettingRow): CommerceActionNotice | null {
+  if (!row?.value || typeof row.value !== "object") {
+    return null;
+  }
+
+  const value = row.value as Partial<CommerceActionNotice>;
+  const updatedAt = new Date(row.updated_at);
+
+  if (!value.notice || Date.now() - updatedAt.getTime() > 10 * 60 * 1000) {
+    return null;
+  }
+
+  return {
+    checked: numberSetting(value.checked, 0),
+    message: typeof value.message === "string" ? value.message : undefined,
+    notice: String(value.notice),
+    submitted: numberSetting(value.submitted, 0),
+    updatedAt,
+  };
+}
+
 export async function getAutoAcceptSettings() {
   await ensureSchema();
   const sql = getSql();
@@ -358,6 +388,34 @@ export async function getCommerceSettings() {
   `;
 
   return normalizeCommerceSettings(rows[0]);
+}
+
+export async function getCommerceActionNotice() {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql<AppSettingRow[]>`
+    SELECT * FROM app_settings
+    WHERE key = ${commerceActionNoticeKey}
+    LIMIT 1
+  `;
+
+  return normalizeCommerceActionNotice(rows[0]);
+}
+
+export async function saveCommerceActionNotice(
+  notice: Omit<CommerceActionNotice, "updatedAt">,
+) {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql<AppSettingRow[]>`
+    INSERT INTO app_settings (key, value)
+    VALUES (${commerceActionNoticeKey}, ${sql.json(toJsonValue(notice))})
+    ON CONFLICT (key) DO UPDATE
+    SET value = EXCLUDED.value, updated_at = NOW()
+    RETURNING *
+  `;
+
+  return normalizeCommerceActionNotice(rows[0]);
 }
 
 export async function saveCommerceSettings(settings: CommerceSettings) {
