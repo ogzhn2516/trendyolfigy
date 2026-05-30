@@ -41,17 +41,17 @@ const updateSchema = z.object({
 });
 
 const commerceSettingsSchema = z.object({
-  defaultCommissionRate: z.coerce.number().min(0).max(60),
-  fixedCost: z.coerce.number().min(0),
-  maxPrice: z.coerce.number().positive(),
-  minPrice: z.coerce.number().positive(),
-  productCost: z.coerce.number().min(0),
+  defaultCommissionRate: z.number().min(0).max(60),
+  fixedCost: z.number().min(0),
+  maxPrice: z.number().positive(),
+  minPrice: z.number().positive(),
+  productCost: z.number().min(0),
   repricerEnabled: z.boolean(),
-  repricerIntervalMinutes: z.coerce.number().int().min(15).max(120),
-  shippingCost: z.coerce.number().min(0),
-  stockWarningDays: z.coerce.number().int().min(1).max(90),
-  targetMarginRate: z.coerce.number().min(0).max(80),
-  undercutAmount: z.coerce.number().min(0.01).max(1000),
+  repricerIntervalMinutes: z.number().int().min(15).max(120),
+  shippingCost: z.number().min(0),
+  stockWarningDays: z.number().int().min(1).max(90),
+  targetMarginRate: z.number().min(0).max(80),
+  undercutAmount: z.number().min(0.01).max(1000),
 });
 
 const bulkPriceSchema = z.object({
@@ -69,6 +69,26 @@ function parseAttributes(value: FormDataEntryValue | null): TrendyolAttributeInp
   const json = JSON.parse(rawValue);
 
   return attributeSchema.parse(json);
+}
+
+function parseFormNumber(value: FormDataEntryValue | null) {
+  const rawValue = String(value ?? "").trim();
+  const normalized = rawValue.includes(",")
+    ? rawValue.replace(/\./g, "").replace(",", ".")
+    : rawValue;
+  const parsed = Number(normalized);
+
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
+function commerceRedirect(params: Record<string, number | string>): never {
+  const searchParams = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(params)) {
+    searchParams.set(key, String(value));
+  }
+
+  redirect(`/admin?${searchParams.toString()}#commerce`);
 }
 
 export async function updateDraftAction(id: string, formData: FormData) {
@@ -130,36 +150,60 @@ export async function updateCommerceSettingsAction(formData: FormData) {
   await requireActionAuth();
 
   if (!hasDatabaseUrl()) {
-    revalidatePath("/admin");
-    return;
+    commerceRedirect({ notice: "database_missing" });
   }
 
-  const settings = commerceSettingsSchema.parse({
-    defaultCommissionRate: formData.get("defaultCommissionRate"),
-    fixedCost: formData.get("fixedCost"),
-    maxPrice: formData.get("maxPrice"),
-    minPrice: formData.get("minPrice"),
-    productCost: formData.get("productCost"),
+  const parsed = commerceSettingsSchema.safeParse({
+    defaultCommissionRate: parseFormNumber(formData.get("defaultCommissionRate")),
+    fixedCost: parseFormNumber(formData.get("fixedCost")),
+    maxPrice: parseFormNumber(formData.get("maxPrice")),
+    minPrice: parseFormNumber(formData.get("minPrice")),
+    productCost: parseFormNumber(formData.get("productCost")),
     repricerEnabled: formData.get("repricerEnabled") === "on",
-    repricerIntervalMinutes: formData.get("repricerIntervalMinutes"),
-    shippingCost: formData.get("shippingCost"),
-    stockWarningDays: formData.get("stockWarningDays"),
-    targetMarginRate: formData.get("targetMarginRate"),
-    undercutAmount: formData.get("undercutAmount"),
+    repricerIntervalMinutes: Math.trunc(
+      parseFormNumber(formData.get("repricerIntervalMinutes")),
+    ),
+    shippingCost: parseFormNumber(formData.get("shippingCost")),
+    stockWarningDays: Math.trunc(parseFormNumber(formData.get("stockWarningDays"))),
+    targetMarginRate: parseFormNumber(formData.get("targetMarginRate")),
+    undercutAmount: parseFormNumber(formData.get("undercutAmount")),
   });
 
+  if (!parsed.success) {
+    commerceRedirect({ notice: "settings_invalid" });
+  }
+
+  const settings = parsed.data;
+
   if (settings.maxPrice < settings.minPrice) {
-    throw new Error("Maksimum fiyat minimum fiyattan düşük olamaz.");
+    commerceRedirect({ notice: "settings_range_error" });
   }
 
   await saveCommerceSettings(settings);
   revalidatePath("/admin");
+  commerceRedirect({ notice: "settings_saved" });
 }
 
 export async function runRepricerAction() {
   await requireActionAuth();
-  await runRepricerUpdate({ force: true });
-  revalidatePath("/admin");
+
+  try {
+    const result = await runRepricerUpdate({ force: true });
+    revalidatePath("/admin");
+    commerceRedirect({
+      checked: result.checked,
+      notice: result.submitted > 0 ? "repricer_submitted" : "repricer_empty",
+      submitted: result.submitted,
+    });
+  } catch (error) {
+    commerceRedirect({
+      message:
+        error instanceof Error
+          ? error.message.slice(0, 180)
+          : "Repricer çalıştırılamadı.",
+      notice: "repricer_error",
+    });
+  }
 }
 
 export async function runBulkPriceChangeAction(formData: FormData) {

@@ -461,6 +461,34 @@
   background: rgba(159, 51, 45, 0.08);
 }
 
+.actionNotice {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  line-height: 1.4;
+}
+
+.actionNotice p {
+  color: var(--muted);
+}
+
+.actionNoticeSuccess {
+  border-color: rgba(23, 101, 71, 0.24);
+  background: rgba(23, 101, 71, 0.08);
+}
+
+.actionNoticeWarning {
+  border-color: rgba(139, 86, 0, 0.28);
+  background: rgba(139, 86, 0, 0.08);
+}
+
+.actionNoticeError {
+  border-color: rgba(159, 51, 45, 0.22);
+  background: rgba(159, 51, 45, 0.08);
+}
+
 .opsGrid,
 .insightGrid,
 .commerceGrid {

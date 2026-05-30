@@ -38,6 +38,73 @@ const visibleOrderStatuses = [
   "Returned",
 ];
 
+type AdminPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function searchParamValue(
+  params: Record<string, string | string[] | undefined>,
+  key: string,
+) {
+  const value = params[key];
+
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function commerceNoticeOf(params: Record<string, string | string[] | undefined>) {
+  const notice = searchParamValue(params, "notice");
+  const submitted = Number(searchParamValue(params, "submitted") ?? 0);
+  const checked = Number(searchParamValue(params, "checked") ?? 0);
+  const message = searchParamValue(params, "message");
+
+  switch (notice) {
+    case "settings_saved":
+      return {
+        message: "Kâr, komisyon, stok ve repricer ayarları veritabanına yazıldı.",
+        tone: "success",
+        title: "Ayarlar kaydedildi",
+      };
+    case "settings_invalid":
+      return {
+        message: "Sayı alanlarını kontrol et. Virgüllü değerler desteklenir.",
+        tone: "error",
+        title: "Ayarlar kaydedilemedi",
+      };
+    case "settings_range_error":
+      return {
+        message: "Maksimum fiyat minimum fiyattan düşük olamaz.",
+        tone: "error",
+        title: "Fiyat aralığı hatalı",
+      };
+    case "database_missing":
+      return {
+        message: "Bu ayarı saklamak için DATABASE_URL gerekir.",
+        tone: "error",
+        title: "Veritabanı bağlı değil",
+      };
+    case "repricer_submitted":
+      return {
+        message: `${submitted.toLocaleString("tr-TR")} ürün için Trendyol fiyat güncelleme kuyruğuna gönderildi.`,
+        tone: "success",
+        title: "Repricer çalıştı",
+      };
+    case "repricer_empty":
+      return {
+        message: `${checked.toLocaleString("tr-TR")} ürün kontrol edildi. Şu anda fiyat önerisi olmadığı için Trendyol'a güncelleme gönderilmedi.`,
+        tone: "warning",
+        title: "Fiyat değişikliği yok",
+      };
+    case "repricer_error":
+      return {
+        message: message || "Repricer çalıştırılamadı.",
+        tone: "error",
+        title: "Repricer hatası",
+      };
+    default:
+      return null;
+  }
+}
+
 function statusText(status: ProductDraft["status"]) {
   switch (status) {
     case "submitted":
@@ -113,11 +180,13 @@ function formatDays(value: number | null) {
   return `${formatNumber(value)} gün`;
 }
 
-export default async function AdminPage() {
+export default async function AdminPage({ searchParams }: AdminPageProps) {
   if (!(await isAdminAuthenticated())) {
     redirect("/login");
   }
 
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const commerceNotice = commerceNoticeOf(resolvedSearchParams);
   const configStatus = getRuntimeConfigStatus();
   const queueEnabled = hasDatabaseUrl();
   let drafts: ProductDraft[] = [];
@@ -219,6 +288,20 @@ export default async function AdminPage() {
             </div>
             <span>Resmi API verileriyle fiyat ve stok karar ekranı</span>
           </div>
+          {commerceNotice ? (
+            <div
+              className={`${styles.actionNotice} ${
+                commerceNotice.tone === "success"
+                  ? styles.actionNoticeSuccess
+                  : commerceNotice.tone === "warning"
+                    ? styles.actionNoticeWarning
+                    : styles.actionNoticeError
+              }`}
+            >
+              <strong>{commerceNotice.title}</strong>
+              <p>{commerceNotice.message}</p>
+            </div>
+          ) : null}
           <div className={styles.commerceLead}>
             <div>
               <p>Akıllı kontrol</p>
