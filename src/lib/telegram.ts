@@ -9,6 +9,7 @@ export type TelegramMessage = {
   chat: { id: number | string };
   from?: { id: number | string };
   photo?: Array<{ file_id: string; file_unique_id: string }>;
+  reply_to_message?: TelegramMessage;
   text?: string;
 };
 
@@ -37,11 +38,34 @@ export function getAllowedTelegramUserIds() {
   );
 }
 
-export async function sendTelegramMessage(chatId: number | string, text: string) {
+export function getBuyboxAlertChatIds() {
+  const configured = process.env.TELEGRAM_BUYBOX_ALERT_CHAT_IDS?.trim();
+  const rawValue = configured || getTelegramConfig().TELEGRAM_ALLOWED_USER_IDS;
+
+  return rawValue
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+export async function sendTelegramMessage(
+  chatId: number | string,
+  text: string,
+  options: { forceReply?: boolean } = {},
+) {
   await fetch(getTelegramApiUrl("sendMessage"), {
     body: JSON.stringify({
       chat_id: chatId,
       disable_web_page_preview: true,
+      ...(options.forceReply
+        ? {
+            reply_markup: {
+              force_reply: true,
+              input_field_placeholder: "Yeni satis fiyatini yazin",
+              selective: true,
+            },
+          }
+        : {}),
       text,
     }),
     cache: "no-store",

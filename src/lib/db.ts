@@ -78,6 +78,29 @@ export type CommerceActionNotice = {
   updatedAt: Date | null;
 };
 
+export type BuyboxSnapshot = {
+  barcode: string;
+  buyboxOrder: number | null;
+  buyboxPrice: number | null;
+  listPrice: number;
+  salePrice: number;
+  stockCode: string;
+  title: string;
+  updatedAt: string;
+};
+
+export type PendingTelegramPriceUpdate = {
+  barcode: string;
+  buyboxOrder: number | null;
+  buyboxPrice: number | null;
+  chatId: string;
+  listPrice: number;
+  quantity: number;
+  salePrice: number;
+  stockCode: string;
+  title: string;
+};
+
 type ProductRow = {
   attributes: TrendyolAttributeInput[];
   barcode: string;
@@ -158,8 +181,10 @@ type GlobalSql = typeof globalThis & {
 
 const globalSql = globalThis as GlobalSql;
 const autoAcceptSettingKey = "auto_accept_orders";
+const buyboxSnapshotsKey = "buybox_snapshots";
 const commerceActionNoticeKey = "commerce_action_notice";
 const commerceSettingKey = "commerce_settings";
+const pendingPriceUpdatePrefix = "pending_price_update:";
 
 export const defaultCommerceSettings: CommerceSettings = {
   defaultCommissionRate: 18,
@@ -366,6 +391,75 @@ function normalizeCommerceActionNotice(row?: AppSettingRow): CommerceActionNotic
   };
 }
 
+function normalizeBuyboxSnapshots(row?: AppSettingRow) {
+  if (!row?.value || typeof row.value !== "object") {
+    return new Map<string, BuyboxSnapshot>();
+  }
+
+  const entries = Object.entries(row.value as Record<string, unknown>);
+  const snapshots = new Map<string, BuyboxSnapshot>();
+
+  for (const [barcode, rawValue] of entries) {
+    if (!rawValue || typeof rawValue !== "object") {
+      continue;
+    }
+
+    const value = rawValue as Partial<BuyboxSnapshot>;
+
+    snapshots.set(barcode, {
+      barcode,
+      buyboxOrder:
+        value.buyboxOrder === null
+          ? null
+          : numberSetting(value.buyboxOrder, 0) || null,
+      buyboxPrice:
+        value.buyboxPrice === null
+          ? null
+          : numberSetting(value.buyboxPrice, 0) || null,
+      listPrice: numberSetting(value.listPrice, 0),
+      salePrice: numberSetting(value.salePrice, 0),
+      stockCode: typeof value.stockCode === "string" ? value.stockCode : "",
+      title: typeof value.title === "string" ? value.title : "",
+      updatedAt:
+        typeof value.updatedAt === "string" ? value.updatedAt : new Date().toISOString(),
+    });
+  }
+
+  return snapshots;
+}
+
+function normalizePendingPriceUpdate(
+  row?: AppSettingRow,
+): PendingTelegramPriceUpdate | null {
+  if (!row?.value || typeof row.value !== "object") {
+    return null;
+  }
+
+  const value = row.value as Partial<PendingTelegramPriceUpdate>;
+
+  if (!value.barcode || !value.chatId) {
+    return null;
+  }
+
+  return {
+    barcode: String(value.barcode),
+    buyboxOrder:
+      value.buyboxOrder === null
+        ? null
+        : numberSetting(value.buyboxOrder, 0) || null,
+    buyboxPrice:
+      value.buyboxPrice === null
+        ? null
+        : numberSetting(value.buyboxPrice, 0) || null,
+    chatId: String(value.chatId),
+    listPrice: numberSetting(value.listPrice, 0),
+    quantity: Math.trunc(numberSetting(value.quantity, 0)),
+    salePrice: numberSetting(value.salePrice, 0),
+    stockCode: typeof value.stockCode === "string" ? value.stockCode : "",
+    title: typeof value.title === "string" ? value.title : "",
+  };
+}
+
 export async function getAutoAcceptSettings() {
   await ensureSchema();
   const sql = getSql();
@@ -400,6 +494,72 @@ export async function getCommerceActionNotice() {
   `;
 
   return normalizeCommerceActionNotice(rows[0]);
+}
+
+export async function getBuyboxSnapshots() {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql<AppSettingRow[]>`
+    SELECT * FROM app_settings
+    WHERE key = ${buyboxSnapshotsKey}
+    LIMIT 1
+  `;
+
+  return normalizeBuyboxSnapshots(rows[0]);
+}
+
+export async function saveBuyboxSnapshots(
+  snapshots: Map<string, BuyboxSnapshot>,
+) {
+  await ensureSchema();
+  const sql = getSql();
+  const value = Object.fromEntries(snapshots.entries());
+
+  await sql`
+    INSERT INTO app_settings (key, value)
+    VALUES (${buyboxSnapshotsKey}, ${sql.json(toJsonValue(value))})
+    ON CONFLICT (key) DO UPDATE
+    SET value = EXCLUDED.value, updated_at = NOW()
+  `;
+}
+
+export async function getPendingTelegramPriceUpdate(chatId: number | string) {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql<AppSettingRow[]>`
+    SELECT * FROM app_settings
+    WHERE key = ${pendingPriceUpdatePrefix + String(chatId)}
+    LIMIT 1
+  `;
+
+  return normalizePendingPriceUpdate(rows[0]);
+}
+
+export async function savePendingTelegramPriceUpdate(
+  pending: PendingTelegramPriceUpdate,
+) {
+  await ensureSchema();
+  const sql = getSql();
+
+  await sql`
+    INSERT INTO app_settings (key, value)
+    VALUES (
+      ${pendingPriceUpdatePrefix + pending.chatId},
+      ${sql.json(toJsonValue(pending))}
+    )
+    ON CONFLICT (key) DO UPDATE
+    SET value = EXCLUDED.value, updated_at = NOW()
+  `;
+}
+
+export async function clearPendingTelegramPriceUpdate(chatId: number | string) {
+  await ensureSchema();
+  const sql = getSql();
+
+  await sql`
+    DELETE FROM app_settings
+    WHERE key = ${pendingPriceUpdatePrefix + String(chatId)}
+  `;
 }
 
 export async function saveCommerceActionNotice(

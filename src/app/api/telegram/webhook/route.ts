@@ -1,6 +1,11 @@
 import { parseProductCaption, telegramCaptionTemplate } from "@/lib/caption";
 import type { ProductDraft } from "@/lib/db";
-import { findDraftByTelegramUpdateId, insertDraft } from "@/lib/db";
+import {
+  clearPendingTelegramPriceUpdate,
+  findDraftByTelegramUpdateId,
+  getPendingTelegramPriceUpdate,
+  insertDraft,
+} from "@/lib/db";
 import { hasDatabaseUrl } from "@/lib/env";
 import {
   submitDirectProductToTrendyol,
@@ -12,6 +17,7 @@ import {
   storeTelegramPhoto,
   type TelegramUpdate,
 } from "@/lib/telegram";
+import { updateSingleProductPrice } from "@/lib/trendyol-commerce-intelligence";
 
 export const maxDuration = 60;
 export const runtime = "nodejs";
@@ -34,6 +40,80 @@ function telegramId(value: number | string | undefined) {
 
 function generatedCode(prefix: string, updateId: string) {
   return `${prefix}-${updateId}`.replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 40);
+}
+
+function parseTelegramPrice(value: string) {
+  const compact = value.trim().replace(/\s+/g, "");
+  const normalized = compact.includes(",")
+    ? compact.replace(/\./g, "").replace(",", ".")
+    : compact.replace(/\.(?=.*\.)/g, "");
+  const parsed = Number(normalized);
+
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 100) / 100 : null;
+}
+
+async function handlePriceUpdateMessage(
+  chatId: number | string,
+  text: string | undefined,
+) {
+  if (!text) {
+    return false;
+  }
+
+  const trimmed = text.trim();
+  const commandMatch = trimmed.match(/^\/?(?:fiyat|price)\s+(\S+)\s+([0-9][0-9.,]*)$/i);
+  let barcode = commandMatch?.[1];
+  let salePrice = commandMatch ? parseTelegramPrice(commandMatch[2]) : null;
+  let pending = null;
+
+  if (!commandMatch && hasDatabaseUrl()) {
+    salePrice = parseTelegramPrice(trimmed);
+
+    if (salePrice !== null) {
+      pending = await getPendingTelegramPriceUpdate(chatId);
+      barcode = pending?.barcode;
+    }
+  }
+
+  if (!barcode || salePrice === null) {
+    return false;
+  }
+
+  try {
+    const result = await updateSingleProductPrice({
+      barcode,
+      listPrice: pending?.listPrice,
+      quantity: pending?.quantity,
+      salePrice,
+    });
+
+    if (hasDatabaseUrl()) {
+      await clearPendingTelegramPriceUpdate(chatId);
+    }
+
+    await sendTelegramMessage(
+      chatId,
+      [
+        "Fiyat guncellemesi Trendyol kuyruğuna gonderildi.",
+        `Urun: ${result.title}`,
+        `Barkod: ${result.barcode}`,
+        `Yeni satis fiyati: ${result.salePrice.toLocaleString("tr-TR", {
+          maximumFractionDigits: 2,
+          minimumFractionDigits: 2,
+        })} TL`,
+        `Batch ID: ${result.batchRequestId ?? "bekleniyor"}`,
+      ].join("\n"),
+    );
+  } catch (error) {
+    await sendTelegramMessage(
+      chatId,
+      `Fiyat guncellenemedi: ${
+        error instanceof Error ? error.message : "Bilinmeyen hata"
+      }`,
+    );
+  }
+
+  return true;
 }
 
 function getDirectDraft(
@@ -117,6 +197,10 @@ export async function POST(request: Request) {
   }
 
   if (!message.photo?.length) {
+    if (await handlePriceUpdateMessage(chatId, message.text)) {
+      return Response.json({ ok: true });
+    }
+
     await sendTelegramMessage(chatId, telegramCaptionTemplate);
     return Response.json({ ok: true });
   }

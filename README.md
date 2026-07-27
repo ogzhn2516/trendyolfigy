@@ -27,6 +27,7 @@ ADMIN_PASSWORD=
 ADMIN_SESSION_SECRET=
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_ALLOWED_USER_IDS=
+TELEGRAM_BUYBOX_ALERT_CHAT_IDS=
 TELEGRAM_WEBHOOK_SECRET=
 TRENDYOL_SELLER_ID=
 TRENDYOL_API_KEY=
@@ -160,6 +161,33 @@ signals when `DATABASE_URL` and Trendyol API credentials are configured.
 
 Set `CRON_SECRET` in Vercel to protect the cron endpoint. Vercel Cron sends it
 as a bearer token automatically when configured.
+
+## BuyBox Alert and Manual Price Update
+
+The repricer endpoint also works as a BuyBox monitor. When a product moves from
+BuyBox rank 1 to rank 2 or lower, the bot sends a Telegram alert with the
+current rank, the first-place BuyBox price, your current sale price, and a
+suggested update command.
+
+Set `DATABASE_URL` so the app can remember the last BuyBox rank and avoid
+repeating the same alert on every check. Optional
+`TELEGRAM_BUYBOX_ALERT_CHAT_IDS` controls where alerts go; if it is empty,
+alerts go to `TELEGRAM_ALLOWED_USER_IDS`.
+
+After an alert, update the product price from Telegram in either format:
+
+```text
+249,90
+```
+
+or:
+
+```text
+/fiyat FIGY-123 249,90
+```
+
+The app sends the change to Trendyol's price-and-inventory API and replies with
+the Trendyol `batchRequestId`.
 
 ## Telegram Webhook
 

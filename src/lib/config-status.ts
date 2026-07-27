@@ -50,6 +50,13 @@ export function getRuntimeConfigStatus() {
       required: true,
     },
     {
+      configured: hasValue("TELEGRAM_BUYBOX_ALERT_CHAT_IDS"),
+      key: "TELEGRAM_BUYBOX_ALERT_CHAT_IDS",
+      label: "BuyBox alarm sohbetleri",
+      note: "Opsiyonel. Boşsa alarm TELEGRAM_ALLOWED_USER_IDS listesine gider.",
+      required: false,
+    },
+    {
       configured: hasValue("BLOB_READ_WRITE_TOKEN"),
       key: "BLOB_READ_WRITE_TOKEN",
       label: "Vercel Blob token",

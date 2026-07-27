@@ -342,8 +342,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               <p>Akıllı kontrol</p>
               <h3>Ürünlerini kâr tabanını koruyarak yönet</h3>
               <span>
-                İlk 100 onaylı satıştaki ürün izlenir; BuyBox resmi endpoint
-                limiti nedeniyle ilk 10 barkod canlı sorgulanır.
+                İlk 100 onaylı satıştaki ürün izlenir; BuyBox verileri 10&apos;luk
+                gruplar halinde canlı sorgulanır.
               </span>
             </div>
             <form action={runRepricerAction} className={styles.repricerCard}>
@@ -365,7 +365,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
             <div>
               <span>BuyBox kaybı</span>
               <strong>{formatNumber(commerce.buyboxLost)}</strong>
-              <p>İlk 10 barkod canlı</p>
+              <p>İlk 100 barkod canlı</p>
             </div>
             <div>
               <span>Repricer hazır</span>

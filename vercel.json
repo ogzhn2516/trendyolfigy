@@ -6,6 +6,10 @@
     {
       "path": "/api/trendyol/auto-accept",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/trendyol/repricer",
+      "schedule": "*/15 * * * *"
     }
   ],
   "outputDirectory": null

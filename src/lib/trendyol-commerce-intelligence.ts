@@ -2,10 +2,14 @@ import "server-only";
 
 import {
   defaultCommerceSettings,
+  getBuyboxSnapshots,
   getCommerceSettings,
+  saveBuyboxSnapshots,
+  savePendingTelegramPriceUpdate,
   type CommerceSettings,
 } from "@/lib/db";
 import { hasDatabaseUrl } from "@/lib/env";
+import { getBuyboxAlertChatIds, sendTelegramMessage } from "@/lib/telegram";
 import {
   getApprovedProducts,
   getProductBuyboxInformation,
@@ -44,6 +48,7 @@ export type CommerceProductInsight = {
 };
 
 export type PriceUpdateRunResult = {
+  alertsSent?: number;
   batchRequestId: string | null;
   checked: number;
   mode: "bulk" | "repricer";
@@ -118,6 +123,31 @@ function buyboxInfoOf(response: unknown) {
   }
 
   return map;
+}
+
+async function getBuyboxMap(barcodes: string[], errors: { area: string; message: string }[]) {
+  const buyboxMap = new Map<string, ApiRecord>();
+
+  for (let index = 0; index < barcodes.length; index += 10) {
+    const batch = barcodes.slice(index, index + 10);
+
+    if (batch.length === 0) {
+      continue;
+    }
+
+    try {
+      for (const [barcode, info] of buyboxInfoOf(await getProductBuyboxInformation(batch))) {
+        buyboxMap.set(barcode, info);
+      }
+    } catch (error) {
+      errors.push({
+        area: "BuyBox",
+        message: getTrendyolErrorSummary(error),
+      });
+    }
+  }
+
+  return buyboxMap;
 }
 
 function orderLinesByBarcode(orders: ApiRecord[]) {
@@ -227,6 +257,39 @@ function stockRisk(quantity: number, daysUntilStockout: number | null, warningDa
   return "ok";
 }
 
+function formatTry(value: number | null) {
+  if (value === null || !Number.isFinite(value)) {
+    return "bilinmiyor";
+  }
+
+  return `${value.toLocaleString("tr-TR", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+  })} TL`;
+}
+
+function buyboxAlertMessage(product: CommerceProductInsight) {
+  const commandPrice = product.recommendedPrice ?? product.buyboxPrice ?? product.salePrice;
+  const command = `/fiyat ${product.barcode} ${commandPrice.toLocaleString("tr-TR", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+  })}`;
+
+  return [
+    `BuyBox alarmi: ${product.title}`,
+    "",
+    `BuyBox siralamaniz ${product.buyboxOrder}. siraya dustu.`,
+    `Guncel 1. sira BuyBox fiyati: ${formatTry(product.buyboxPrice)}`,
+    `Mevcut satis fiyatiniz: ${formatTry(product.salePrice)}`,
+    product.recommendedPrice
+      ? `Onerilen hedef fiyat: ${formatTry(product.recommendedPrice)}`
+      : "Kar kurallariniza gore otomatik fiyat onerisi olusmadi.",
+    "",
+    "Fiyati guncellemek icin bu mesaja sadece yeni fiyati yazin.",
+    `Alternatif komut: ${command}`,
+  ].join("\n");
+}
+
 async function readCommerceSettings() {
   if (!hasDatabaseUrl()) {
     return defaultCommerceSettings;
@@ -283,19 +346,8 @@ export async function getCommerceDashboardData() {
   const barcodes = flattened
     .map(({ variant }) => textValue(variant.barcode))
     .filter(Boolean)
-    .slice(0, 10);
-  let buyboxMap = new Map<string, ApiRecord>();
-
-  if (barcodes.length > 0) {
-    try {
-      buyboxMap = buyboxInfoOf(await getProductBuyboxInformation(barcodes));
-    } catch (error) {
-      errors.push({
-        area: "BuyBox",
-        message: getTrendyolErrorSummary(error),
-      });
-    }
-  }
+    .slice(0, 100);
+  const buyboxMap = await getBuyboxMap(barcodes, errors);
 
   const productInsights: CommerceProductInsight[] = flattened
     .slice(0, 100)
@@ -396,9 +448,11 @@ export async function getCommerceDashboardData() {
 
 export async function runRepricerUpdate(options: { force?: boolean } = {}) {
   const dashboard = await getCommerceDashboardData();
+  const alertsSent = await sendBuyboxLossAlerts(dashboard.products);
 
   if (!dashboard.settings.repricerEnabled && !options.force) {
     return {
+      alertsSent,
       batchRequestId: null,
       checked: dashboard.products.length,
       mode: "repricer" as const,
@@ -418,6 +472,7 @@ export async function runRepricerUpdate(options: { force?: boolean } = {}) {
 
   if (items.length === 0) {
     return {
+      alertsSent,
       batchRequestId: null,
       checked: dashboard.products.length,
       mode: "repricer" as const,
@@ -429,6 +484,7 @@ export async function runRepricerUpdate(options: { force?: boolean } = {}) {
   const response = await updatePriceAndInventory(items);
 
   return {
+    alertsSent,
     batchRequestId:
       response.batchRequestId && typeof response.batchRequestId === "string"
         ? response.batchRequestId
@@ -437,6 +493,106 @@ export async function runRepricerUpdate(options: { force?: boolean } = {}) {
     mode: "repricer" as const,
     skipped: dashboard.products.length - items.length,
     submitted: items.length,
+  };
+}
+
+export async function sendBuyboxLossAlerts(products: CommerceProductInsight[]) {
+  if (!hasDatabaseUrl()) {
+    return 0;
+  }
+
+  const snapshots = await getBuyboxSnapshots();
+  const chatIds = getBuyboxAlertChatIds();
+  let alertsSent = 0;
+  const now = new Date().toISOString();
+
+  for (const product of products) {
+    if (!product.barcode) {
+      continue;
+    }
+
+    const previous = snapshots.get(product.barcode);
+    const lostBuybox =
+      product.buyboxOrder !== null &&
+      product.buyboxOrder > 1 &&
+      (!previous?.buyboxOrder || previous.buyboxOrder <= 1);
+
+    snapshots.set(product.barcode, {
+      barcode: product.barcode,
+      buyboxOrder: product.buyboxOrder,
+      buyboxPrice: product.buyboxPrice,
+      listPrice: product.listPrice,
+      salePrice: product.salePrice,
+      stockCode: product.stockCode,
+      title: product.title,
+      updatedAt: now,
+    });
+
+    if (!lostBuybox) {
+      continue;
+    }
+
+    for (const chatId of chatIds) {
+      await savePendingTelegramPriceUpdate({
+        barcode: product.barcode,
+        buyboxOrder: product.buyboxOrder,
+        buyboxPrice: product.buyboxPrice,
+        chatId,
+        listPrice: product.listPrice,
+        quantity: product.quantity,
+        salePrice: product.salePrice,
+        stockCode: product.stockCode,
+        title: product.title,
+      });
+      await sendTelegramMessage(chatId, buyboxAlertMessage(product), {
+        forceReply: true,
+      });
+      alertsSent += 1;
+    }
+  }
+
+  await saveBuyboxSnapshots(snapshots);
+
+  return alertsSent;
+}
+
+export async function updateSingleProductPrice(input: {
+  barcode: string;
+  listPrice?: number;
+  quantity?: number;
+  salePrice: number;
+}) {
+  const dashboard = await getCommerceDashboardData();
+  const product = dashboard.products.find(
+    (item) => item.barcode.toLocaleLowerCase("tr-TR") === input.barcode.toLocaleLowerCase("tr-TR"),
+  );
+  const salePrice = Math.round(input.salePrice * 100) / 100;
+
+  if (!Number.isFinite(salePrice) || salePrice <= 0) {
+    throw new Error("Gecerli bir satis fiyati girin.");
+  }
+
+  const listPrice = Math.max(product?.listPrice ?? input.listPrice ?? salePrice, salePrice);
+  const quantity = product?.quantity ?? input.quantity ?? 0;
+  const response = await updatePriceAndInventory([
+    {
+      barcode: input.barcode,
+      listPrice,
+      quantity,
+      salePrice,
+    },
+  ]);
+
+  return {
+    batchRequestId:
+      response.batchRequestId && typeof response.batchRequestId === "string"
+        ? response.batchRequestId
+        : null,
+    barcode: input.barcode,
+    listPrice,
+    quantity,
+    salePrice,
+    title: product?.title ?? input.barcode,
   };
 }
 
