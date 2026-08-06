@@ -75,7 +75,7 @@ function totalPagesOf(response: unknown) {
   return Math.max(1, Math.trunc(numberValue(Reflect.get(response, "totalPages"))));
 }
 
-async function getAllOnSaleProducts() {
+export async function getAllOnSaleProducts() {
   const firstPage = await getApprovedProducts({ page: 0, size: 100, status: "onSale" });
   const products = [...contentOf(firstPage)];
   const totalPages = Math.min(totalPagesOf(firstPage), 100);

@@ -68,6 +68,12 @@ type PriceAndInventoryItem = {
   salePrice: number;
 };
 
+export type ApprovedProductContentUpdateItem = {
+  contentId: number;
+  description?: string;
+  title?: string;
+};
+
 function getHeaders() {
   const config = getTrendyolConfig();
   const authorization = Buffer.from(
@@ -399,6 +405,31 @@ export async function updatePriceAndInventory(items: PriceAndInventoryItem[]) {
   if (!response.ok) {
     throw new TrendyolApiError(
       `Trendyol fiyat-stok isteği ${response.status} ile reddedildi.`,
+      body,
+    );
+  }
+
+  return body;
+}
+
+export async function updateApprovedProductContent(
+  items: ApprovedProductContentUpdateItem[],
+) {
+  const config = getTrendyolConfig();
+  const response = await fetch(
+    `${getBaseUrl()}/integration/product/sellers/${config.TRENDYOL_SELLER_ID}/products/content-bulk-update`,
+    {
+      body: JSON.stringify({ items: items.slice(0, 1000) }),
+      cache: "no-store",
+      headers: getHeaders(),
+      method: "POST",
+    },
+  );
+  const body = await readResponse(response);
+
+  if (!response.ok) {
+    throw new TrendyolApiError(
+      `Trendyol urun icerigi guncelleme istegi ${response.status} ile reddedildi.`,
       body,
     );
   }

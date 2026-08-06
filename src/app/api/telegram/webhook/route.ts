@@ -22,6 +22,7 @@ import {
   sendManualBuyboxReport,
   updateSingleProductPrice,
 } from "@/lib/trendyol-commerce-intelligence";
+import { applySeoUpdates, sendSeoReport } from "@/lib/trendyol-seo";
 
 export const maxDuration = 60;
 export const runtime = "nodejs";
@@ -172,6 +173,37 @@ async function handleBuyboxPriceButton(update: TelegramUpdate) {
   return true;
 }
 
+async function handleSeoButton(update: TelegramUpdate) {
+  const callback = update.callback_query;
+
+  if (!callback?.data || !callback.message || (callback.data !== "seoall" && !callback.data.startsWith("seo|"))) {
+    return false;
+  }
+
+  const chatId = callback.message.chat.id;
+  if (!getAllowedTelegramUserIds().has(telegramId(callback.from.id))) {
+    await answerTelegramCallbackQuery(callback.id, "Bu islem icin yetkiniz yok.");
+    return true;
+  }
+
+  const contentId = callback.data === "seoall" ? undefined : Number(callback.data.split("|")[1]);
+  if (contentId !== undefined && (!Number.isFinite(contentId) || contentId <= 0)) {
+    await answerTelegramCallbackQuery(callback.id, "Gecersiz urun.");
+    return true;
+  }
+
+  await answerTelegramCallbackQuery(callback.id, "SEO guncellemesi hazirlaniyor...");
+  try {
+    const result = await applySeoUpdates(contentId);
+    await sendTelegramMessage(chatId, result.count
+      ? `SEO guncellemesi ${result.count} urun icin Trendyol onayina gonderildi.\nBatch ID: ${result.batchRequestId ?? "bekleniyor"}`
+      : "Guncellenecek dusuk puanli urun bulunamadi.");
+  } catch (error) {
+    await sendTelegramMessage(chatId, `SEO guncellemesi gonderilemedi: ${error instanceof Error ? error.message : "Bilinmeyen hata"}`);
+  }
+  return true;
+}
+
 function getDirectDraft(
   updateId: string,
   chatId: string,
@@ -240,6 +272,10 @@ export async function POST(request: Request) {
     return Response.json({ ok: true });
   }
 
+  if (await handleSeoButton(update)) {
+    return Response.json({ ok: true });
+  }
+
   const message = update.message;
 
   if (!message) {
@@ -279,6 +315,16 @@ export async function POST(request: Request) {
         );
       }
 
+      return Response.json({ ok: true });
+    }
+
+    if (command === "seo" || command === "/seo" || command === "seo kontrol") {
+      await sendTelegramMessage(chatId, "Tum satis urunleri icin SEO kontrolu baslatildi...");
+      try {
+        await sendSeoReport(chatId);
+      } catch (error) {
+        await sendTelegramMessage(chatId, `SEO kontrolu tamamlanamadi: ${error instanceof Error ? error.message : "Bilinmeyen hata"}`);
+      }
       return Response.json({ ok: true });
     }
 
