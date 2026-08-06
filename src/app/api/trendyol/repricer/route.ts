@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { runRepricerUpdate } from "@/lib/trendyol-commerce-intelligence";
+import { processSeoAiQueue } from "@/lib/trendyol-seo";
 import { getTrendyolErrorSummary } from "@/lib/trendyol";
 
 export const dynamic = "force-dynamic";
@@ -38,8 +39,9 @@ export async function GET(request: Request) {
 
   try {
     const result = await runRepricerUpdate();
+    const seoQueue = await processSeoAiQueue();
 
-    return NextResponse.json({ ok: true, ...result });
+    return NextResponse.json({ ok: true, seoQueue, ...result });
   } catch (error) {
     console.error("BuyBox monitor run failed.", error);
     return NextResponse.json(

@@ -185,6 +185,13 @@ const buyboxSnapshotsKey = "buybox_snapshots";
 const commerceActionNoticeKey = "commerce_action_notice";
 const commerceSettingKey = "commerce_settings";
 const pendingPriceUpdatePrefix = "pending_price_update:";
+const seoAiQueueKey = "seo_ai_queue";
+
+export type SeoAiQueueItem = {
+  chatId: string;
+  contentId: number;
+  createdAt: string;
+};
 
 export const defaultCommerceSettings: CommerceSettings = {
   defaultCommissionRate: 18,
@@ -560,6 +567,44 @@ export async function clearPendingTelegramPriceUpdate(chatId: number | string) {
     DELETE FROM app_settings
     WHERE key = ${pendingPriceUpdatePrefix + String(chatId)}
   `;
+}
+
+export async function getSeoAiQueue(): Promise<SeoAiQueueItem[]> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql<AppSettingRow[]>`
+    SELECT * FROM app_settings WHERE key = ${seoAiQueueKey} LIMIT 1
+  `;
+  const value = rows[0]?.value;
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    .map((item) => ({
+      chatId: String(item.chatId ?? ""),
+      contentId: Number(item.contentId),
+      createdAt: String(item.createdAt ?? new Date().toISOString()),
+    }))
+    .filter((item) => item.chatId && Number.isFinite(item.contentId) && item.contentId > 0);
+}
+
+export async function saveSeoAiQueue(items: SeoAiQueueItem[]) {
+  await ensureSchema();
+  const sql = getSql();
+  await sql`
+    INSERT INTO app_settings (key, value)
+    VALUES (${seoAiQueueKey}, ${sql.json(toJsonValue(items))})
+    ON CONFLICT (key) DO UPDATE
+    SET value = EXCLUDED.value, updated_at = NOW()
+  `;
+}
+
+export async function enqueueSeoAiUpdate(item: SeoAiQueueItem) {
+  const queue = await getSeoAiQueue();
+  const exists = queue.some(
+    (current) => current.chatId === item.chatId && current.contentId === item.contentId,
+  );
+  if (!exists) queue.push(item);
+  await saveSeoAiQueue(queue);
 }
 
 export async function saveCommerceActionNotice(

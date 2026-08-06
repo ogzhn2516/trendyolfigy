@@ -194,15 +194,28 @@ async function handleSeoButton(update: TelegramUpdate) {
 
   await answerTelegramCallbackQuery(callback.id, "SEO guncellemesi hazirlaniyor...");
   try {
-    const result = await applySeoUpdates(contentId);
-    if (!result.count) {
+    if (!contentId) {
+      await sendTelegramMessage(chatId, "AI SEO islemleri urun gorselleri tek tek analiz edilerek yapilir. Yeni `seo` listesindeki urun butonlarini kullanin.");
+      return true;
+    }
+    const result = await applySeoUpdates(contentId, chatId);
+    if (result.method === "queued") {
+      await sendTelegramMessage(
+        chatId,
+        [
+          "⏳ AI SEO islemi bekleme kuyruguna alindi.",
+          "Gemini ve yedek AI limiti su an kullanilamiyor.",
+          "Kota yenilendiginde sistem otomatik tekrar deneyip sonucu bildirecek.",
+        ].join("\n"),
+      );
+    } else if (!result.count) {
       await sendTelegramMessage(chatId, "Guncellenecek urun bulunamadi. Urun satis durumunu kontrol edin.");
     } else if (result.method === "ai") {
       await sendTelegramMessage(
         chatId,
         [
           "✅ SEO guncellemesi tamamlandi.",
-          "Yontem: AI gorsel analizi",
+          `Yontem: ${result.provider ?? "AI"} gorsel analizi`,
           `Guncellenen urun: ${result.count}`,
           `Batch ID: ${result.batchRequestId ?? "bekleniyor"}`,
         ].join("\n"),

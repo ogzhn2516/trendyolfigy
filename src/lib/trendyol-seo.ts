@@ -1,5 +1,6 @@
 import "server-only";
 
+import { enqueueSeoAiUpdate, getSeoAiQueue, saveSeoAiQueue } from "@/lib/db";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { getAllOnSaleProducts } from "@/lib/trendyol-commerce-intelligence";
 import { updateApprovedProductContent } from "@/lib/trendyol";
@@ -19,7 +20,7 @@ export type SeoProduct = {
   title: string;
 };
 
-type AiSeoContent = { description: string; title: string };
+type AiSeoContent = { description: string; provider: "Gemini" | "OpenRouter"; title: string };
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -271,11 +272,53 @@ function parseAiJson(value: string) {
   return { description: text(parsed.description), title: text(parsed.title) };
 }
 
-async function generateAiSeoContent(product: SeoProduct): Promise<AiSeoContent | null> {
-  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
-  if (!apiKey || !product.imageUrl) return null;
+function validateAiContent(generated: { description: string; title: string }, provider: AiSeoContent["provider"]): AiSeoContent {
+  const safeTitle = titleCase(truncateTitle(wordsOf(removeRepeatedWords(normalizeTitle(generated.title))).slice(0, 13).join(" ")));
+  const safeDescription = cleanAiDescription(generated.description);
+  if (wordsOf(safeTitle).length < 9 || !safeDescription) throw new Error("AI gecersiz SEO icerigi uretti.");
+  return { description: safeDescription, provider, title: safeTitle };
+}
 
-  const prompt = [
+async function generateGeminiSeoContent(product: SeoProduct): Promise<AiSeoContent | null> {
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  if (!apiKey || !product.imageUrl) return null;
+  const imageResponse = await fetch(product.imageUrl, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
+  if (!imageResponse.ok) throw new Error("Urun gorseli AI icin alinamadi.");
+  const imageBase64 = Buffer.from(await imageResponse.arrayBuffer()).toString("base64");
+  const prompt = buildAiPrompt(product);
+  const model = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+    {
+      body: JSON.stringify({
+        contents: [{ parts: [
+          { text: prompt },
+          { inlineData: { data: imageBase64, mimeType: imageResponse.headers.get("content-type") || "image/jpeg" } },
+        ] }],
+        generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
+      }),
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+      method: "POST",
+      signal: AbortSignal.timeout(25_000),
+    },
+  );
+  const body = await response.json().catch(() => null) as ApiRecord | null;
+  if (!response.ok || !body) {
+    const message = text(record(body?.error).message) || `Gemini ${response.status} hatasi`;
+    throw new Error(response.status === 429 ? `AI_KOTA_DOLDU: ${message}` : message);
+  }
+  const candidates = Array.isArray(body.candidates) ? body.candidates : [];
+  const parts = Array.isArray(record(record(candidates[0]).content).parts)
+    ? record(record(candidates[0]).content).parts as ApiRecord[]
+    : [];
+  const content = text(record(parts[0]).text);
+  if (!content) throw new Error("Gemini bos yanit verdi.");
+  return validateAiContent(parseAiJson(content), "Gemini");
+}
+
+function buildAiPrompt(product: SeoProduct) {
+  return [
     "Sen Trendyol urun icerigi uzmanisin. Urun gorselini ve dogrulanmis bilgileri incele.",
     "Yalnizca JSON dondur: {\"title\":\"...\",\"description\":\"...\"}.",
     "Baslik Turkce, dogal ve arama niyetine uygun 9-13 kelime, en fazla 100 karakter olsun.",
@@ -287,6 +330,13 @@ async function generateAiSeoContent(product: SeoProduct): Promise<AiSeoContent |
     `Dogrulanmis ozellikler: ${product.attributes.join("; ") || "Belirtilmemis"}`,
     `Mevcut aciklama: ${plainHtml(product.description).slice(0, 2500)}`,
   ].join("\n");
+}
+
+async function generateOpenRouterSeoContent(product: SeoProduct): Promise<AiSeoContent | null> {
+  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
+  if (!apiKey || !product.imageUrl) return null;
+
+  const prompt = buildAiPrompt(product);
 
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     body: JSON.stringify({
@@ -317,11 +367,7 @@ async function generateAiSeoContent(product: SeoProduct): Promise<AiSeoContent |
   const content = text(record(record(choices[0]).message).content);
   if (!content) throw new Error("AI servisi bos yanit verdi.");
 
-  const generated = parseAiJson(content);
-  const safeTitle = titleCase(truncateTitle(wordsOf(removeRepeatedWords(normalizeTitle(generated.title))).slice(0, 13).join(" ")));
-  const safeDescription = cleanAiDescription(generated.description);
-  if (wordsOf(safeTitle).length < 9 || !safeDescription) throw new Error("AI gecersiz SEO icerigi uretti.");
-  return { description: safeDescription, title: safeTitle };
+  return validateAiContent(parseAiJson(content), "OpenRouter");
 }
 
 export async function scanLowSeoProducts() {
@@ -338,7 +384,7 @@ function batchIdOf(response: unknown) {
   return typeof value === "string" ? value : null;
 }
 
-export async function applySeoUpdates(contentId?: number) {
+export async function applySeoUpdates(contentId?: number, chatId?: number | string) {
   let selected: SeoProduct[];
 
   if (contentId) {
@@ -359,24 +405,48 @@ export async function applySeoUpdates(contentId?: number) {
       aiFallbackReason: null,
       batchRequestId: null,
       count: 0,
-      method: "standard" as const,
+      method: "not_found" as const,
+      provider: null,
+      queued: false,
     };
   }
 
   const items = [];
   let aiCount = 0;
   let aiFallbackReason: string | null = null;
+  let provider: AiSeoContent["provider"] | null = null;
   for (const product of selected) {
     let aiContent: AiSeoContent | null = null;
     if (contentId) {
       try {
-        aiContent = await generateAiSeoContent(product);
+        aiContent = await generateGeminiSeoContent(product);
+        if (!aiContent) aiContent = await generateOpenRouterSeoContent(product);
       } catch (error) {
-        console.error("AI SEO generation failed; deterministic fallback used.", error);
+        console.error("Primary AI SEO generation failed.", error);
         aiFallbackReason = error instanceof Error ? error.message : "AI servisi kullanilamadi.";
+        try {
+          aiContent = await generateOpenRouterSeoContent(product);
+        } catch (fallbackError) {
+          console.error("Fallback AI SEO generation failed.", fallbackError);
+          aiFallbackReason = fallbackError instanceof Error ? fallbackError.message : aiFallbackReason;
+        }
       }
     }
-    if (aiContent) aiCount += 1;
+    if (!aiContent && contentId) {
+      if (chatId) {
+        await enqueueSeoAiUpdate({ chatId: String(chatId), contentId, createdAt: new Date().toISOString() });
+      }
+      return {
+        aiCount: 0,
+        aiFallbackReason,
+        batchRequestId: null,
+        count: 0,
+        method: "queued" as const,
+        provider: null,
+        queued: true,
+      };
+    }
+    if (aiContent) { aiCount += 1; provider = aiContent.provider; }
     items.push({
       contentId: product.contentId,
       description: aiContent?.description ?? product.suggestedDescription,
@@ -390,7 +460,31 @@ export async function applySeoUpdates(contentId?: number) {
     batchRequestId: batchIdOf(response),
     count: selected.length,
     method: aiCount > 0 ? "ai" as const : "standard" as const,
+    provider,
+    queued: false,
   };
+}
+
+export async function processSeoAiQueue() {
+  const queue = await getSeoAiQueue();
+  const remaining: typeof queue = [];
+  let completed = 0;
+  let processed = 0;
+  for (const [index, item] of queue.slice(0, 5).entries()) {
+    const result = await applySeoUpdates(item.contentId);
+    if (result.method === "ai") {
+      completed += 1;
+      processed += 1;
+      await sendTelegramMessage(item.chatId, `✅ Bekleyen SEO islemi ${result.provider} AI ile tamamlandi.\nBatch ID: ${result.batchRequestId ?? "bekleniyor"}`);
+    } else {
+      remaining.push(...queue.slice(index));
+      processed = queue.length;
+      break;
+    }
+  }
+  if (processed < queue.length) remaining.push(...queue.slice(processed));
+  await saveSeoAiQueue(remaining);
+  return { completed, remaining: remaining.length };
 }
 
 export async function sendSeoReport(chatId: number | string) {
@@ -408,7 +502,6 @@ export async function sendSeoReport(chatId: number | string) {
       "Puan Trendyol'un resmi puani degil; baslik, aciklama ve urun ozelliklerinden hesaplanan kalite puanidir.",
       "Asagidaki butonla tum onerileri Trendyol onay surecine gonderebilirsiniz.",
     ].join("\n"),
-    { inlineKeyboard: [[{ callbackData: "seoall", text: `Tumunu duzelt (${lowProducts.length})` }]] },
   );
 
   for (const [index, product] of lowProducts.slice(0, 25).entries()) {
