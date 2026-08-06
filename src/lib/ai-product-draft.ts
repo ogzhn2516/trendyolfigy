@@ -153,11 +153,11 @@ export async function analyzeNewProductImage(imageInput: string | string[], user
       attributeId: Number(record(item.attribute).id || item.attributeId),
       name: text(record(item.attribute).name) || text(item.attributeName),
       allowCustom: item.allowCustom === true,
-      values: (Array.isArray(item.attributeValues) ? item.attributeValues : []).slice(0, 100).map((raw) => ({ id: Number(record(raw).id || record(raw).attributeValueId), name: text(record(raw).name) || text(record(raw).attributeValue) })),
+      values: (Array.isArray(item.attributeValues) ? item.attributeValues : []).slice(0, 40).map((raw) => ({ id: Number(record(raw).id || record(raw).attributeValueId), name: text(record(raw).name) || text(record(raw).attributeValue) })),
     }));
     const selected = await gemini([
       { text: `Urun gorseli ve basliga gore zorunlu Trendyol ozelliklerini sec. Yalnizca JSON dondur: {\"attributes\":[{\"attributeId\":1,\"attributeValueId\":2}]} Her zorunlu attribute icin verilen degerlerden birini sec; uydurma ID kullanma. Urun: ${text(vision.title)}\n${JSON.stringify(compact)}` },
-    ], 8_000, "Kategori ozellik secimi");
+    ], 25_000, "Kategori ozellik secimi");
     const selections = Array.isArray(selected.attributes) ? selected.attributes.map(record) : [];
     attributes = selections.map((item) => ({ attributeId: Number(item.attributeId), attributeValueId: Number(item.attributeValueId) })).filter((item) => Number.isFinite(item.attributeId) && Number.isFinite(item.attributeValueId));
     const selectedIds = new Set(attributes.map((item) => item.attributeId));
