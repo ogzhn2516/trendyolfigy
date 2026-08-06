@@ -50,7 +50,14 @@ async function gemini(parts: ApiRecord[], timeoutMs = 10_000, stage = "AI islemi
 }
 
 function flattenCategories(value: unknown, parents: string[] = []): CategoryCandidate[] {
-  const nodes = Array.isArray(value) ? value : Array.isArray(record(value).categories) ? record(value).categories as unknown[] : [value];
+  const wrapper = record(value);
+  const nodes = Array.isArray(value)
+    ? value
+    : Array.isArray(wrapper.categories)
+      ? wrapper.categories as unknown[]
+      : wrapper.category
+        ? [wrapper.category]
+        : [value];
   return nodes.flatMap((raw) => {
     const node = record(raw);
     const id = Number(node.id);
@@ -60,6 +67,29 @@ function flattenCategories(value: unknown, parents: string[] = []): CategoryCand
     if (children.length) return flattenCategories(children, path);
     return Number.isFinite(id) && name ? [{ id, name, path: path.join(" > ") }] : [];
   });
+}
+
+function normalizedWords(value: string) {
+  return value
+    .toLocaleLowerCase("tr-TR")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9çğıöşü]+/gi, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 2);
+}
+
+function rankCategories(candidates: CategoryCandidate[], query: string) {
+  const queryWords = new Set(normalizedWords(query));
+  return candidates
+    .map((candidate) => {
+      const pathWords = normalizedWords(candidate.path);
+      const matches = pathWords.filter((word) => queryWords.has(word)).length;
+      const exactBonus = [...queryWords].some((word) => candidate.name.toLocaleLowerCase("tr-TR").includes(word)) ? 3 : 0;
+      return { candidate, score: matches * 2 + exactBonus };
+    })
+    .sort((a, b) => b.score - a.score || a.candidate.path.length - b.candidate.path.length)
+    .map((item) => item.candidate);
 }
 
 function categoryAttributes(value: unknown) {
@@ -101,8 +131,12 @@ export async function analyzeNewProductImage(imageInput: string | string[], user
   }
 
   const categoryResponses = await Promise.all(searchTerms.map((term) => getCategoryTree(term)));
-  const candidates = categoryResponses.flatMap((response) => flattenCategories(response));
-  const unique = [...new Map(candidates.map((item) => [item.id, item])).values()].slice(0, 150);
+  let candidates = categoryResponses.flatMap((response) => flattenCategories(response));
+  if (!candidates.length) {
+    candidates = flattenCategories(await getCategoryTree());
+  }
+  const deduplicated = [...new Map(candidates.map((item) => [item.id, item])).values()];
+  const unique = rankCategories(deduplicated, `${title} ${searchTerms.join(" ")}`).slice(0, 150);
   if (!unique.length) throw new Error("Uygun Trendyol alt kategorisi bulunamadi.");
   const choice = await gemini([
     { text: `Urun: ${text(vision.title)}\nGorsel analizine gore asagidaki Trendyol yaprak kategorilerinden tam birini sec. Yalnizca JSON dondur: {\"categoryId\":123}. Adaylar:\n${unique.map((item) => `${item.id}: ${item.path}`).join("\n")}` },
