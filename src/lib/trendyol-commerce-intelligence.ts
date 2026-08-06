@@ -170,6 +170,25 @@ async function getBuyboxMap(barcodes: string[], errors: { area: string; message:
   return buyboxMap;
 }
 
+export async function getBuyboxCompetitionByBarcode(barcodes: string[]) {
+  const errors: { area: string; message: string }[] = [];
+  const buyboxMap = await getBuyboxMap(
+    [...new Set(barcodes.map((barcode) => barcode.trim()).filter(Boolean))],
+    errors,
+  );
+
+  if (errors.length > 0) {
+    throw new Error(`BuyBox uygunluk kontrolu tamamlanamadi: ${errors[0].message}`);
+  }
+
+  return new Map(
+    [...buyboxMap.entries()].map(([barcode, info]) => [
+      barcode,
+      info.hasMultipleSeller === true,
+    ]),
+  );
+}
+
 function orderLinesByBarcode(orders: ApiRecord[]) {
   const sales = new Map<string, number>();
 

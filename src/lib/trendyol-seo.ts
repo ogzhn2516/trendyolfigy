@@ -2,13 +2,17 @@ import "server-only";
 
 import { enqueueSeoAiUpdate, getSeoAiQueue, saveSeoAiQueue } from "@/lib/db";
 import { sendTelegramMessage } from "@/lib/telegram";
-import { getAllOnSaleProducts } from "@/lib/trendyol-commerce-intelligence";
+import {
+  getAllOnSaleProducts,
+  getBuyboxCompetitionByBarcode,
+} from "@/lib/trendyol-commerce-intelligence";
 import { updateApprovedProductContent } from "@/lib/trendyol";
 
 type ApiRecord = Record<string, unknown>;
 
 export type SeoProduct = {
   attributes: string[];
+  barcodes: string[];
   category: string;
   contentId: number;
   description: string;
@@ -130,6 +134,15 @@ function firstImageUrl(product: ApiRecord) {
   return text(record(images[0]).url) || null;
 }
 
+function productBarcodes(product: ApiRecord) {
+  const variants = Array.isArray(product.variants) ? product.variants : [];
+  const values = [
+    text(product.barcode),
+    ...variants.map((variant) => text(record(variant).barcode)),
+  ].filter(Boolean);
+  return [...new Set(values)];
+}
+
 const titleAttributePriority = [
   "materyal",
   "tema",
@@ -246,6 +259,7 @@ export function analyzeSeoProduct(product: ApiRecord): SeoProduct | null {
   const cleanTitle = suggestedTitle(product, title);
   return {
     attributes: attributeLines(product),
+    barcodes: productBarcodes(product),
     category: categoryName(product),
     contentId,
     description,
@@ -372,9 +386,23 @@ async function generateOpenRouterSeoContent(product: SeoProduct): Promise<AiSeoC
 
 export async function scanLowSeoProducts() {
   const products = await getAllOnSaleProducts();
+  const competition = await getBuyboxCompetitionByBarcode(
+    products.flatMap(productBarcodes),
+  );
   return products
     .map(analyzeSeoProduct)
-    .filter((item): item is SeoProduct => Boolean(item && item.score < 70))
+    .filter(
+      (item): item is SeoProduct =>
+        Boolean(
+          item &&
+          item.score < 70 &&
+          item.barcodes.length > 0 &&
+          item.barcodes.every(
+            (barcode) =>
+              competition.has(barcode) && competition.get(barcode) === false,
+          ),
+        ),
+    )
     .sort((a, b) => a.score - b.score);
 }
 
@@ -389,11 +417,25 @@ export async function applySeoUpdates(contentId?: number, chatId?: number | stri
 
   if (contentId) {
     const products = await getAllOnSaleProducts();
-    selected = products
+    const matching = products.filter(
+      (product) => Number(product.contentId) === contentId,
+    );
+    const competition = await getBuyboxCompetitionByBarcode(
+      matching.flatMap(productBarcodes),
+    );
+    selected = matching
       .map(analyzeSeoProduct)
       .filter(
         (product): product is SeoProduct =>
-          Boolean(product && product.contentId === contentId),
+          Boolean(
+            product &&
+            product.contentId === contentId &&
+            product.barcodes.length > 0 &&
+            product.barcodes.every(
+              (barcode) =>
+                competition.has(barcode) && competition.get(barcode) === false,
+            ),
+          ),
       );
   } else {
     selected = await scanLowSeoProducts();
@@ -509,6 +551,7 @@ export async function sendSeoReport(chatId: number | string) {
     [
       `SEO kontrolu tamamlandi. Dusuk puanli urun: ${lowProducts.length}`,
       "Puan Trendyol'un resmi puani degil; baslik, aciklama ve urun ozelliklerinden hesaplanan kalite puanidir.",
+      "BuyBox rekabeti olan urunler haric tutuldu; yalnizca size ait tek saticili urunler listelenir.",
       "Asagidaki butonla tum onerileri Trendyol onay surecine gonderebilirsiniz.",
     ].join("\n"),
   );

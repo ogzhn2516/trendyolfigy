@@ -211,7 +211,10 @@ async function handleSeoButton(update: TelegramUpdate) {
         ].join("\n"),
       );
     } else if (!result.count) {
-      await sendTelegramMessage(chatId, "Guncellenecek urun bulunamadi. Urun satis durumunu kontrol edin.");
+      await sendTelegramMessage(
+        chatId,
+        "Urun SEO icin uygun degil. Urun satis disinda olabilir veya BuyBox rekabeti bulundugu icin SEO degisikliginden haric tutulmustur.",
+      );
     } else if (result.method === "ai") {
       await sendTelegramMessage(
         chatId,
