@@ -43,6 +43,8 @@ TRENDYOL_BASE_URL=https://apigw.trendyol.com
 BLOB_READ_WRITE_TOKEN=
 DATABASE_URL=
 CRON_SECRET=
+TRENDYOL_REPRICER_SECRET=
+BUYBOX_TEST_SECRET=
 ```
 
 `ADMIN_SESSION_SECRET` must be at least 32 characters.
@@ -188,6 +190,16 @@ or:
 
 The app sends the change to Trendyol's price-and-inventory API and replies with
 the Trendyol `batchRequestId`.
+
+The production cron calls `/api/trendyol/repricer` every 15 minutes. Configure
+`CRON_SECRET` (or `TRENDYOL_REPRICER_SECRET`) and use a Vercel plan or external
+cron provider that supports this frequency. To run a complete database,
+Trendyol-read, and Telegram-delivery test:
+
+```bash
+curl -X POST "https://your-vercel-domain.example/api/trendyol/buybox-test" \
+  -H "Authorization: Bearer $BUYBOX_TEST_SECRET"
+```
 
 ## Telegram Webhook
 

@@ -532,22 +532,42 @@ export async function sendBuyboxLossAlerts(products: CommerceProductInsight[]) {
       continue;
     }
 
+    let delivered = false;
+
     for (const chatId of chatIds) {
-      await savePendingTelegramPriceUpdate({
-        barcode: product.barcode,
-        buyboxOrder: product.buyboxOrder,
-        buyboxPrice: product.buyboxPrice,
-        chatId,
-        listPrice: product.listPrice,
-        quantity: product.quantity,
-        salePrice: product.salePrice,
-        stockCode: product.stockCode,
-        title: product.title,
-      });
-      await sendTelegramMessage(chatId, buyboxAlertMessage(product), {
-        forceReply: true,
-      });
-      alertsSent += 1;
+      try {
+        await sendTelegramMessage(chatId, buyboxAlertMessage(product), {
+          forceReply: true,
+        });
+        alertsSent += 1;
+        delivered = true;
+
+        try {
+          await savePendingTelegramPriceUpdate({
+            barcode: product.barcode,
+            buyboxOrder: product.buyboxOrder,
+            buyboxPrice: product.buyboxPrice,
+            chatId,
+            listPrice: product.listPrice,
+            quantity: product.quantity,
+            salePrice: product.salePrice,
+            stockCode: product.stockCode,
+            title: product.title,
+          });
+        } catch (error) {
+          console.error(`Pending price update could not be saved for chat ${chatId}.`, error);
+        }
+      } catch (error) {
+        console.error(`BuyBox alert could not be delivered to chat ${chatId}.`, error);
+      }
+    }
+
+    if (!delivered) {
+      if (previous) {
+        snapshots.set(product.barcode, previous);
+      } else {
+        snapshots.delete(product.barcode);
+      }
     }
   }
 

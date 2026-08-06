@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { runRepricerUpdate } from "@/lib/trendyol-commerce-intelligence";
+import { getTrendyolErrorSummary } from "@/lib/trendyol";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 function getExpectedSecret() {
   return (
@@ -34,9 +36,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const result = await runRepricerUpdate();
+  try {
+    const result = await runRepricerUpdate();
 
-  return NextResponse.json(result);
+    return NextResponse.json({ ok: true, ...result });
+  } catch (error) {
+    console.error("BuyBox monitor run failed.", error);
+    return NextResponse.json(
+      { error: getTrendyolErrorSummary(error), ok: false },
+      { status: 500 },
+    );
+  }
 }
 
 export async function POST(request: Request) {

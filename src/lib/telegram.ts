@@ -25,6 +25,14 @@ type TelegramFileResponse = {
   };
 };
 
+type TelegramSendMessageResponse = {
+  description?: string;
+  ok: boolean;
+  result?: {
+    message_id?: number;
+  };
+};
+
 function getTelegramApiUrl(method: string) {
   return `https://api.telegram.org/bot${getTelegramConfig().TELEGRAM_BOT_TOKEN}/${method}`;
 }
@@ -53,7 +61,7 @@ export async function sendTelegramMessage(
   text: string,
   options: { forceReply?: boolean } = {},
 ) {
-  await fetch(getTelegramApiUrl("sendMessage"), {
+  const response = await fetch(getTelegramApiUrl("sendMessage"), {
     body: JSON.stringify({
       chat_id: chatId,
       disable_web_page_preview: true,
@@ -72,6 +80,19 @@ export async function sendTelegramMessage(
     headers: { "Content-Type": "application/json" },
     method: "POST",
   });
+  const body = (await response.json().catch(() => ({
+    ok: false,
+  }))) as TelegramSendMessageResponse;
+
+  if (!response.ok || !body.ok) {
+    throw new Error(
+      `Telegram mesaji gonderilemedi${body.description ? `: ${body.description}` : ` (${response.status})`}.`,
+    );
+  }
+
+  return {
+    messageId: body.result?.message_id ?? null,
+  };
 }
 
 async function getTelegramFileUrl(fileId: string) {
