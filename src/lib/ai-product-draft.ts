@@ -60,13 +60,13 @@ function categoryAttributes(value: unknown) {
   return items.map(record);
 }
 
-export async function analyzeNewProductImage(imageUrl: string) {
+export async function analyzeNewProductImage(imageUrl: string, userNotes = "") {
   const imageResponse = await fetch(imageUrl, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
   if (!imageResponse.ok) throw new Error("Urun gorseli analiz icin alinamadi.");
   const imageData = Buffer.from(await imageResponse.arrayBuffer()).toString("base64");
   const imagePart = { inlineData: { data: imageData, mimeType: imageResponse.headers.get("content-type") || "image/jpeg" } };
   const vision = await gemini([
-    { text: "Gorseldeki urunu analiz et. Turkce JSON dondur: title (Trendyol Akademi kurallarina uygun 9-13 kelime, en fazla 100 karakter), description (HTML etiketi olmadan 2-4 kisa paragraf ve dogal SEO), searchTerms (Trendyol kategori aramasi icin 3 kisa genel kategori terimi), vatRate (0,1,10 veya 20), dimensionalWeight (pozitif sayi). Marka, barkod, stok, emoji, abarti veya gorselde olmayan ozellik yazma." },
+    { text: `Gorseldeki urunu analiz et. Turkce JSON dondur: title (Trendyol Akademi kurallarina uygun 9-13 kelime, en fazla 100 karakter), description (HTML etiketi olmadan 2-4 kisa paragraf ve dogal SEO), searchTerms (Trendyol kategori aramasi icin 3 kisa genel kategori terimi), vatRate (0,1,10 veya 20), dimensionalWeight (pozitif sayi). Marka, barkod, stok, emoji, abarti veya gorselde olmayan ozellik yazma. Saticinin ek notlari varsa dogru urun ozellikleri olarak kullan: ${userNotes.slice(0, 1000) || "yok"}` },
     imagePart,
   ]);
   const searchTerms = Array.isArray(vision.searchTerms) ? vision.searchTerms.map(text).filter(Boolean).slice(0, 3) : [];

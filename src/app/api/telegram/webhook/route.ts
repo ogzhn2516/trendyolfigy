@@ -297,8 +297,9 @@ async function handleProductApprovalButton(update: TelegramUpdate) {
 
 function imageCaptionPrice(caption?: string) {
   if (!caption?.trim()) return null;
-  const match = caption.trim().match(/^(?:fiyat\s*:\s*)?([0-9][0-9.,]*)\s*(?:tl)?$/i);
-  return match ? parseTelegramPrice(match[1]) : null;
+  const match = caption.trim().match(/^(?:fiyat\s*:\s*)?([0-9][0-9.,]*)\s*(?:tl)?(?:\r?\n([\s\S]+))?$/i);
+  const price = match ? parseTelegramPrice(match[1]) : null;
+  return price === null ? null : { notes: match?.[2]?.trim() || "", price };
 }
 
 function getDirectDraft(
@@ -456,9 +457,9 @@ export async function POST(request: Request) {
 
   const photo = message.photo.at(-1);
   if (!photo) return Response.json({ ok: true });
-  const simplePrice = imageCaptionPrice(message.caption);
+  const simpleProduct = imageCaptionPrice(message.caption);
 
-  if (simplePrice !== null) {
+  if (simpleProduct !== null) {
     if (!databaseEnabled) {
       await sendTelegramMessage(chatId, "AI urun onay akisi icin veritabani baglantisi gerekli.");
       return Response.json({ ok: true });
@@ -467,7 +468,7 @@ export async function POST(request: Request) {
     try {
       const storedImage = await storeTelegramPhoto(photo.file_id, updateId);
       if (!storedImage.imageUrl) throw new Error(storedImage.warning || "Kalici urun gorseli olusturulamadi.");
-      const ai = await analyzeNewProductImage(storedImage.imageUrl);
+      const ai = await analyzeNewProductImage(storedImage.imageUrl, simpleProduct.notes);
       const draft = await insertDraft({
         attributes: ai.attributes,
         categoryId: ai.categoryId,
@@ -475,9 +476,9 @@ export async function POST(request: Request) {
         dimensionalWeight: ai.dimensionalWeight,
         imageUrl: storedImage.imageUrl,
         lastError: `AI kategori: ${ai.categoryName}`,
-        listPrice: simplePrice,
+        listPrice: simpleProduct.price,
         quantity: 1000,
-        salePrice: simplePrice,
+        salePrice: simpleProduct.price,
         status: "needs_review",
         telegramChatId: telegramId(chatId),
         telegramFileId: photo.file_id,
@@ -493,7 +494,7 @@ export async function POST(request: Request) {
           "🤖 AI urun taslagi hazir",
           `Urun: ${draft.title}`,
           `Kategori: ${ai.categoryName} (${ai.categoryId})`,
-          `Fiyat: ${simplePrice.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL`,
+          `Fiyat: ${simpleProduct.price.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL`,
           `KDV: %${ai.vatRate}`,
           `Zorunlu ozellik: ${ai.attributes.length}`,
           `Aciklama: ${cleanDescription.slice(0, 900)}`,
