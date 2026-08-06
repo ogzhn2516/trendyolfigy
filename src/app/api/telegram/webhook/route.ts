@@ -195,9 +195,32 @@ async function handleSeoButton(update: TelegramUpdate) {
   await answerTelegramCallbackQuery(callback.id, "SEO guncellemesi hazirlaniyor...");
   try {
     const result = await applySeoUpdates(contentId);
-    await sendTelegramMessage(chatId, result.count
-      ? `SEO guncellemesi ${result.count} urun icin Trendyol onayina gonderildi.\nYontem: ${result.aiCount ? "AI gorsel analizi" : "guvenli kural tabanli yedek"}\nBatch ID: ${result.batchRequestId ?? "bekleniyor"}`
-      : "Guncellenecek dusuk puanli urun bulunamadi.");
+    if (!result.count) {
+      await sendTelegramMessage(chatId, "Guncellenecek urun bulunamadi. Urun satis durumunu kontrol edin.");
+    } else if (result.method === "ai") {
+      await sendTelegramMessage(
+        chatId,
+        [
+          "✅ SEO guncellemesi tamamlandi.",
+          "Yontem: AI gorsel analizi",
+          `Guncellenen urun: ${result.count}`,
+          `Batch ID: ${result.batchRequestId ?? "bekleniyor"}`,
+        ].join("\n"),
+      );
+    } else {
+      await sendTelegramMessage(
+        chatId,
+        [
+          "✅ SEO guncellemesi tamamlandi.",
+          "Yontem: Normal SEO sistemi (AI kullanilmadi)",
+          contentId && result.aiFallbackReason
+            ? "AI yanit vermedigi veya kullanilamadigi icin guvenli yedek sistem uygulandi."
+            : "Toplu islemler guvenli normal SEO sistemiyle uygulanir.",
+          `Guncellenen urun: ${result.count}`,
+          `Batch ID: ${result.batchRequestId ?? "bekleniyor"}`,
+        ].join("\n"),
+      );
+    }
   } catch (error) {
     await sendTelegramMessage(chatId, `SEO guncellemesi gonderilemedi: ${error instanceof Error ? error.message : "Bilinmeyen hata"}`);
   }

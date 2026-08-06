@@ -353,10 +353,19 @@ export async function applySeoUpdates(contentId?: number) {
     selected = await scanLowSeoProducts();
   }
 
-  if (!selected.length) return { aiCount: 0, batchRequestId: null, count: 0 };
+  if (!selected.length) {
+    return {
+      aiCount: 0,
+      aiFallbackReason: null,
+      batchRequestId: null,
+      count: 0,
+      method: "standard" as const,
+    };
+  }
 
   const items = [];
   let aiCount = 0;
+  let aiFallbackReason: string | null = null;
   for (const product of selected) {
     let aiContent: AiSeoContent | null = null;
     if (contentId) {
@@ -364,6 +373,7 @@ export async function applySeoUpdates(contentId?: number) {
         aiContent = await generateAiSeoContent(product);
       } catch (error) {
         console.error("AI SEO generation failed; deterministic fallback used.", error);
+        aiFallbackReason = error instanceof Error ? error.message : "AI servisi kullanilamadi.";
       }
     }
     if (aiContent) aiCount += 1;
@@ -374,7 +384,13 @@ export async function applySeoUpdates(contentId?: number) {
     });
   }
   const response = await updateApprovedProductContent(items);
-  return { aiCount, batchRequestId: batchIdOf(response), count: selected.length };
+  return {
+    aiCount,
+    aiFallbackReason,
+    batchRequestId: batchIdOf(response),
+    count: selected.length,
+    method: aiCount > 0 ? "ai" as const : "standard" as const,
+  };
 }
 
 export async function sendSeoReport(chatId: number | string) {
