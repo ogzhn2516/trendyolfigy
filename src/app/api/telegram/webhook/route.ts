@@ -17,7 +17,10 @@ import {
   storeTelegramPhoto,
   type TelegramUpdate,
 } from "@/lib/telegram";
-import { updateSingleProductPrice } from "@/lib/trendyol-commerce-intelligence";
+import {
+  sendManualBuyboxReport,
+  updateSingleProductPrice,
+} from "@/lib/trendyol-commerce-intelligence";
 
 export const maxDuration = 60;
 export const runtime = "nodejs";
@@ -197,6 +200,25 @@ export async function POST(request: Request) {
   }
 
   if (!message.photo?.length) {
+    const command = message.text?.trim().toLocaleLowerCase("tr-TR");
+
+    if (command === "buybox kontrol" || command === "/buybox" || command === "/buybox_kontrol") {
+      await sendTelegramMessage(chatId, "Tum satis urunleri icin BuyBox kontrolu baslatildi...");
+
+      try {
+        await sendManualBuyboxReport(chatId);
+      } catch (error) {
+        await sendTelegramMessage(
+          chatId,
+          `BuyBox kontrolu tamamlanamadi: ${
+            error instanceof Error ? error.message : "Bilinmeyen hata"
+          }`,
+        );
+      }
+
+      return Response.json({ ok: true });
+    }
+
     if (await handlePriceUpdateMessage(chatId, message.text)) {
       return Response.json({ ok: true });
     }

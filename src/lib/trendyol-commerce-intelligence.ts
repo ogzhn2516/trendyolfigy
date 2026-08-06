@@ -5,7 +5,6 @@ import {
   getBuyboxSnapshots,
   getCommerceSettings,
   saveBuyboxSnapshots,
-  savePendingTelegramPriceUpdate,
   type CommerceSettings,
 } from "@/lib/db";
 import { hasDatabaseUrl } from "@/lib/env";
@@ -66,6 +65,27 @@ function contentOf(response: unknown) {
   const content = Reflect.get(response, "content");
 
   return Array.isArray(content) ? (content as ApiRecord[]) : [];
+}
+
+function totalPagesOf(response: unknown) {
+  if (!response || typeof response !== "object") {
+    return 1;
+  }
+
+  return Math.max(1, Math.trunc(numberValue(Reflect.get(response, "totalPages"))));
+}
+
+async function getAllOnSaleProducts() {
+  const firstPage = await getApprovedProducts({ page: 0, size: 100, status: "onSale" });
+  const products = [...contentOf(firstPage)];
+  const totalPages = Math.min(totalPagesOf(firstPage), 100);
+
+  for (let page = 1; page < totalPages; page += 1) {
+    const response = await getApprovedProducts({ page, size: 100, status: "onSale" });
+    products.push(...contentOf(response));
+  }
+
+  return products;
 }
 
 function numberValue(value: unknown) {
@@ -268,26 +288,71 @@ function formatTry(value: number | null) {
   })} TL`;
 }
 
-function buyboxAlertMessage(product: CommerceProductInsight) {
-  const commandPrice = product.recommendedPrice ?? product.buyboxPrice ?? product.salePrice;
-  const command = `/fiyat ${product.barcode} ${commandPrice.toLocaleString("tr-TR", {
+function buyboxListItem(product: CommerceProductInsight, index: number) {
+  const targetPrice = product.recommendedPrice ?? product.buyboxPrice ?? product.salePrice;
+  const commandPrice = targetPrice.toLocaleString("tr-TR", {
     maximumFractionDigits: 2,
     minimumFractionDigits: 2,
-  })}`;
+  });
 
   return [
-    `BuyBox alarmi: ${product.title}`,
-    "",
-    `BuyBox siralamaniz ${product.buyboxOrder}. siraya dustu.`,
-    `Guncel 1. sira BuyBox fiyati: ${formatTry(product.buyboxPrice)}`,
-    `Mevcut satis fiyatiniz: ${formatTry(product.salePrice)}`,
-    product.recommendedPrice
-      ? `Onerilen hedef fiyat: ${formatTry(product.recommendedPrice)}`
-      : "Kar kurallariniza gore otomatik fiyat onerisi olusmadi.",
-    "",
-    "Fiyati guncellemek icin bu mesaja sadece yeni fiyati yazin.",
-    `Alternatif komut: ${command}`,
+    `${index}. ${product.title || product.barcode}`,
+    `Barkod: ${product.barcode}`,
+    `Sira: #${product.buyboxOrder ?? "?"} | BuyBox: ${formatTry(product.buyboxPrice)} | Sizin fiyat: ${formatTry(product.salePrice)}`,
+    `Guncelle: /fiyat ${product.barcode} ${commandPrice}`,
   ].join("\n");
+}
+
+function chunkTelegramText(heading: string, sections: string[]) {
+  const chunks: string[] = [];
+  let current = heading;
+
+  for (const section of sections) {
+    const candidate = `${current}\n\n${section}`;
+
+    if (candidate.length > 3800 && current !== heading) {
+      chunks.push(current);
+      current = `${heading} (devam)\n\n${section}`;
+    } else {
+      current = candidate;
+    }
+  }
+
+  chunks.push(current);
+  return chunks;
+}
+
+async function sendBuyboxList(
+  chatId: number | string,
+  products: CommerceProductInsight[],
+  heading: string,
+) {
+  const lost = products.filter(
+    (product) => product.buyboxOrder !== null && product.buyboxOrder > 1,
+  );
+  const title = `${heading}\nTaranan urun: ${products.length}\nBuyBox kaybi: ${lost.length}`;
+  const sections = lost.map((product, index) => buyboxListItem(product, index + 1));
+
+  for (const chunk of chunkTelegramText(title, sections)) {
+    await sendTelegramMessage(chatId, chunk);
+  }
+
+  return lost.length;
+}
+
+export async function sendManualBuyboxReport(chatId: number | string) {
+  const dashboard = await getCommerceDashboardData();
+  const lost = await sendBuyboxList(
+    chatId,
+    dashboard.products,
+    "Anlik BuyBox kontrol sonucu",
+  );
+
+  return {
+    errors: dashboard.errors,
+    lost,
+    tracked: dashboard.products.length,
+  };
 }
 
 async function readCommerceSettings() {
@@ -318,7 +383,7 @@ export async function getCommerceDashboardData() {
   const settings = await readCommerceSettings();
   const errors: { area: string; message: string }[] = [];
   const [productsResult, ordersResult] = await Promise.allSettled([
-    getApprovedProducts({ page: 0, size: 100, status: "onSale" }),
+    getAllOnSaleProducts(),
     getRecentOrders(),
   ]);
 
@@ -336,8 +401,7 @@ export async function getCommerceDashboardData() {
     });
   }
 
-  const products =
-    productsResult.status === "fulfilled" ? contentOf(productsResult.value) : [];
+  const products = productsResult.status === "fulfilled" ? productsResult.value : [];
   const orders = ordersResult.status === "fulfilled" ? ordersResult.value : [];
   const salesByBarcode = orderLinesByBarcode(orders);
   const flattened = products.flatMap((product) =>
@@ -345,13 +409,10 @@ export async function getCommerceDashboardData() {
   );
   const barcodes = flattened
     .map(({ variant }) => textValue(variant.barcode))
-    .filter(Boolean)
-    .slice(0, 100);
+    .filter(Boolean);
   const buyboxMap = await getBuyboxMap(barcodes, errors);
 
-  const productInsights: CommerceProductInsight[] = flattened
-    .slice(0, 100)
-    .map(({ product, variant }) => {
+  const productInsights: CommerceProductInsight[] = flattened.map(({ product, variant }) => {
       const barcode = textValue(variant.barcode);
       const price =
         variant.price && typeof variant.price === "object"
@@ -411,7 +472,7 @@ export async function getCommerceDashboardData() {
         stockRisk: stockRisk(quantity, daysUntilStockout, settings.stockWarningDays),
         title: textValue(product.title),
       };
-    });
+  });
 
   const buyboxLost = productInsights.filter(
     (product) => product.buyboxOrder !== null && product.buyboxOrder > 1,
@@ -505,6 +566,8 @@ export async function sendBuyboxLossAlerts(products: CommerceProductInsight[]) {
   const chatIds = getBuyboxAlertChatIds();
   let alertsSent = 0;
   const now = new Date().toISOString();
+  const newlyLost: CommerceProductInsight[] = [];
+  const previousByBarcode = new Map<string, ReturnType<typeof snapshots.get>>();
 
   for (const product of products) {
     if (!product.barcode) {
@@ -512,6 +575,7 @@ export async function sendBuyboxLossAlerts(products: CommerceProductInsight[]) {
     }
 
     const previous = snapshots.get(product.barcode);
+    previousByBarcode.set(product.barcode, previous);
     const lostBuybox =
       product.buyboxOrder !== null &&
       product.buyboxOrder > 1 &&
@@ -532,41 +596,31 @@ export async function sendBuyboxLossAlerts(products: CommerceProductInsight[]) {
       continue;
     }
 
+    newlyLost.push(product);
+  }
+
+  if (newlyLost.length > 0) {
     let delivered = false;
 
     for (const chatId of chatIds) {
       try {
-        await sendTelegramMessage(chatId, buyboxAlertMessage(product), {
-          forceReply: true,
-        });
-        alertsSent += 1;
+        await sendBuyboxList(chatId, newlyLost, "BuyBox kaybi alarmi");
+        alertsSent += newlyLost.length;
         delivered = true;
-
-        try {
-          await savePendingTelegramPriceUpdate({
-            barcode: product.barcode,
-            buyboxOrder: product.buyboxOrder,
-            buyboxPrice: product.buyboxPrice,
-            chatId,
-            listPrice: product.listPrice,
-            quantity: product.quantity,
-            salePrice: product.salePrice,
-            stockCode: product.stockCode,
-            title: product.title,
-          });
-        } catch (error) {
-          console.error(`Pending price update could not be saved for chat ${chatId}.`, error);
-        }
       } catch (error) {
-        console.error(`BuyBox alert could not be delivered to chat ${chatId}.`, error);
+        console.error(`BuyBox alert list could not be delivered to chat ${chatId}.`, error);
       }
     }
 
     if (!delivered) {
-      if (previous) {
-        snapshots.set(product.barcode, previous);
-      } else {
-        snapshots.delete(product.barcode);
+      for (const product of newlyLost) {
+        const previous = previousByBarcode.get(product.barcode);
+
+        if (previous) {
+          snapshots.set(product.barcode, previous);
+        } else {
+          snapshots.delete(product.barcode);
+        }
       }
     }
   }
