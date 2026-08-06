@@ -204,6 +204,8 @@ async function handleSeoButton(update: TelegramUpdate) {
         chatId,
         [
           "⏳ AI SEO islemi bekleme kuyruguna alindi.",
+          `Urun: ${result.productTitle ?? "Bilinmiyor"}`,
+          `Content ID: ${result.productContentId ?? "Bilinmiyor"}`,
           "Gemini ve yedek AI limiti su an kullanilamiyor.",
           "Kota yenilendiginde sistem otomatik tekrar deneyip sonucu bildirecek.",
         ].join("\n"),
@@ -215,6 +217,8 @@ async function handleSeoButton(update: TelegramUpdate) {
         chatId,
         [
           "✅ SEO guncellemesi tamamlandi.",
+          `Urun: ${result.productTitle ?? "Bilinmiyor"}`,
+          `Content ID: ${result.productContentId ?? "Bilinmiyor"}`,
           `Yontem: ${result.provider ?? "AI"} gorsel analizi`,
           `Guncellenen urun: ${result.count}`,
           `Batch ID: ${result.batchRequestId ?? "bekleniyor"}`,
@@ -225,6 +229,8 @@ async function handleSeoButton(update: TelegramUpdate) {
         chatId,
         [
           "✅ SEO guncellemesi tamamlandi.",
+          `Urun: ${result.productTitle ?? "Bilinmiyor"}`,
+          `Content ID: ${result.productContentId ?? "Bilinmiyor"}`,
           "Yontem: Normal SEO sistemi (AI kullanilmadi)",
           contentId && result.aiFallbackReason
             ? "AI yanit vermedigi veya kullanilamadigi icin guvenli yedek sistem uygulandi."

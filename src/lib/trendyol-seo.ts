@@ -406,6 +406,8 @@ export async function applySeoUpdates(contentId?: number, chatId?: number | stri
       batchRequestId: null,
       count: 0,
       method: "not_found" as const,
+      productContentId: contentId ?? null,
+      productTitle: null,
       provider: null,
       queued: false,
     };
@@ -442,6 +444,8 @@ export async function applySeoUpdates(contentId?: number, chatId?: number | stri
         batchRequestId: null,
         count: 0,
         method: "queued" as const,
+        productContentId: product.contentId,
+        productTitle: product.title,
         provider: null,
         queued: true,
       };
@@ -460,6 +464,8 @@ export async function applySeoUpdates(contentId?: number, chatId?: number | stri
     batchRequestId: batchIdOf(response),
     count: selected.length,
     method: aiCount > 0 ? "ai" as const : "standard" as const,
+    productContentId: selected[0]?.contentId ?? null,
+    productTitle: selected[0]?.title ?? null,
     provider,
     queued: false,
   };
@@ -475,7 +481,10 @@ export async function processSeoAiQueue() {
     if (result.method === "ai") {
       completed += 1;
       processed += 1;
-      await sendTelegramMessage(item.chatId, `✅ Bekleyen SEO islemi ${result.provider} AI ile tamamlandi.\nBatch ID: ${result.batchRequestId ?? "bekleniyor"}`);
+      await sendTelegramMessage(
+        item.chatId,
+        `✅ Bekleyen SEO islemi ${result.provider} AI ile tamamlandi.\nUrun: ${result.productTitle ?? "Bilinmiyor"}\nContent ID: ${result.productContentId ?? item.contentId}\nBatch ID: ${result.batchRequestId ?? "bekleniyor"}`,
+      );
     } else {
       remaining.push(...queue.slice(index));
       processed = queue.length;
