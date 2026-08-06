@@ -260,7 +260,12 @@ export async function POST(request: Request) {
   if (!message.photo?.length) {
     const command = message.text?.trim().toLocaleLowerCase("tr-TR");
 
-    if (command === "buybox kontrol" || command === "/buybox" || command === "/buybox_kontrol") {
+    if (
+      command === "buybox" ||
+      command === "buybox kontrol" ||
+      command === "/buybox" ||
+      command === "/buybox_kontrol"
+    ) {
       await sendTelegramMessage(chatId, "Tum satis urunleri icin BuyBox kontrolu baslatildi...");
 
       try {
