@@ -5,6 +5,7 @@ import { getCategoryAttributes, getCategoryTree } from "@/lib/trendyol";
 
 type ApiRecord = Record<string, unknown>;
 type CategoryCandidate = { id: number; name: string; path: string };
+let fullCategoryTreePromise: Promise<CategoryCandidate[]> | null = null;
 
 function record(value: unknown): ApiRecord {
   return value && typeof value === "object" ? value as ApiRecord : {};
@@ -96,6 +97,34 @@ function normalizedValue(value: string) {
   return value.toLocaleLowerCase("tr-TR").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, " ").trim();
 }
 
+async function allTrendyolCategories() {
+  if (!fullCategoryTreePromise) {
+    fullCategoryTreePromise = getCategoryTree().then(flattenCategories).catch((error) => {
+      fullCategoryTreePromise = null;
+      throw error;
+    });
+  }
+  return fullCategoryTreePromise;
+}
+
+async function resolvePreferredCategory(categoryInput: string, productTitle: string) {
+  const categories = await allTrendyolCategories();
+  const requested = normalizedValue(categoryInput);
+  const requestedId = Number(categoryInput.trim());
+  const byId = Number.isFinite(requestedId) ? categories.find((item) => item.id === requestedId) : null;
+  if (byId) return byId;
+  const exact = categories.filter((item) => normalizedValue(item.name) === requested || normalizedValue(item.path) === requested);
+  if (exact.length) return rankCategories(exact, `${categoryInput} ${productTitle}`)[0];
+  const partial = categories.filter((item) => {
+    const name = normalizedValue(item.name);
+    const path = normalizedValue(item.path);
+    return name.includes(requested) || requested.includes(name) || path.includes(requested);
+  });
+  if (partial.length) return rankCategories(partial, `${categoryInput} ${productTitle}`)[0];
+  const suggestions = rankCategories(categories, `${categoryInput} ${productTitle}`).slice(0, 5).map((item) => item.path);
+  throw new Error(`Kategori bulunamadi: ${categoryInput}.${suggestions.length ? ` En yakin kategoriler: ${suggestions.join(" | ")}` : ""}`);
+}
+
 function bestAttributeValue(values: Array<{ id: number; name: string }>, hint: string) {
   const wanted = normalizedValue(hint);
   if (!wanted) return null;
@@ -140,7 +169,7 @@ function categoryAttributes(value: unknown) {
   return items.map(record);
 }
 
-export async function analyzeNewProductImage(imageInput: string | string[], userNotes = "") {
+export async function analyzeNewProductImage(imageInput: string | string[], userNotes = "", preferredCategory = "") {
   // Albümün yalnızca ana (ilk) görseli AI'a gönderilir. Diğer görseller
   // taslakta korunur ve onaydan sonra Trendyol'a yüklenir.
   const imageUrls = (Array.isArray(imageInput) ? imageInput : [imageInput]).slice(0, 1);
@@ -170,20 +199,22 @@ export async function analyzeNewProductImage(imageInput: string | string[], user
     throw new Error("AI baslik veya aciklamayi kalite kurallarina uygun olusturamadi; fotografi daha net cekip tekrar deneyin.");
   }
 
-  const categoryResponses = await Promise.all(searchTerms.map((term) => getCategoryTree(term)));
-  let candidates = categoryResponses.flatMap((response) => flattenCategories(response));
-  if (!candidates.length) {
-    candidates = flattenCategories(await getCategoryTree());
+  let category: CategoryCandidate | undefined;
+  if (preferredCategory.trim()) {
+    category = await resolvePreferredCategory(preferredCategory, title);
+  } else {
+    const categoryResponses = await Promise.all(searchTerms.map((term) => getCategoryTree(term)));
+    let candidates = categoryResponses.flatMap((response) => flattenCategories(response));
+    if (!candidates.length) candidates = await allTrendyolCategories();
+    const deduplicated = [...new Map(candidates.map((item) => [item.id, item])).values()];
+    const unique = rankCategories(deduplicated, `${title} ${searchTerms.join(" ")}`).slice(0, 150);
+    if (!unique.length) throw new Error("Uygun Trendyol alt kategorisi bulunamadi.");
+    const choice = await gemini([
+      { text: `Urun: ${title}\nGorsel analizine gore asagidaki Trendyol yaprak kategorilerinden tam birini sec. Yalnizca JSON dondur: {\"categoryId\":123}. Adaylar:\n${unique.map((item) => `${item.id}: ${item.path}`).join("\n")}` },
+    ], 8_000, "Kategori secimi");
+    category = unique.find((item) => item.id === Number(choice.categoryId));
   }
-  const deduplicated = [...new Map(candidates.map((item) => [item.id, item])).values()];
-  const unique = rankCategories(deduplicated, `${title} ${searchTerms.join(" ")}`).slice(0, 150);
-  if (!unique.length) throw new Error("Uygun Trendyol alt kategorisi bulunamadi.");
-  const choice = await gemini([
-    { text: `Urun: ${text(vision.title)}\nGorsel analizine gore asagidaki Trendyol yaprak kategorilerinden tam birini sec. Yalnizca JSON dondur: {\"categoryId\":123}. Adaylar:\n${unique.map((item) => `${item.id}: ${item.path}`).join("\n")}` },
-  ], 8_000, "Kategori secimi");
-  const categoryId = Number(choice.categoryId);
-  const category = unique.find((item) => item.id === categoryId);
-  if (!category) throw new Error("AI gecerli Trendyol kategorisi secemedi.");
+  if (!category) throw new Error("Gecerli Trendyol alt kategorisi secilemedi.");
 
   const attributesResponse = await getCategoryAttributes(category.id);
   const required = categoryAttributes(attributesResponse).filter((item) => item.required === true);

@@ -299,9 +299,15 @@ async function handleProductApprovalButton(update: TelegramUpdate) {
 
 function imageCaptionPrice(caption?: string) {
   if (!caption?.trim()) return null;
-  const match = caption.trim().match(/^(?:fiyat\s*:\s*)?([0-9][0-9.,]*)\s*(?:tl)?(?:\r?\n([\s\S]+))?$/i);
-  const price = match ? parseTelegramPrice(match[1]) : null;
-  return price === null ? null : { notes: match?.[2]?.trim() || "", price };
+  const lines = caption.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const priceLine = lines.find((line) => /^(?:fiyat\s*:\s*)?[0-9][0-9.,]*\s*(?:tl)?$/i.test(line));
+  const priceMatch = priceLine?.match(/^(?:fiyat\s*:\s*)?([0-9][0-9.,]*)/i);
+  const price = priceMatch ? parseTelegramPrice(priceMatch[1]) : null;
+  if (price === null) return null;
+  const categoryLine = lines.find((line) => /^kategori\s*:/i.test(line));
+  const category = categoryLine?.replace(/^kategori\s*:\s*/i, "").trim() || "";
+  const notes = lines.filter((line) => line !== categoryLine && line !== priceLine).join("\n");
+  return { category, notes, price };
 }
 
 async function createAiDraftAndNotify(input: {
@@ -309,11 +315,15 @@ async function createAiDraftAndNotify(input: {
   fileIds: string[];
   imageUrls: string[];
   notes: string;
+  category: string;
   price: number;
   updateId: string;
   userId: string;
 }) {
-  const ai = await analyzeNewProductImage(input.imageUrls, input.notes);
+  if (!input.category.trim()) {
+    throw new Error("Kategori gerekli. Aciklamaya yeni satirda `Kategori: alt kategori adi` yazin.");
+  }
+  const ai = await analyzeNewProductImage(input.imageUrls, input.notes, input.category);
   const draft = await insertDraft({
     attributes: ai.attributes,
     categoryId: ai.categoryId,
@@ -519,6 +529,7 @@ export async function POST(request: Request) {
       if (!storedImage.imageUrl) throw new Error(storedImage.warning || "Kalici urun gorseli olusturulamadi.");
       await addTelegramAlbumPhoto({
         chatId: telegramId(chatId),
+        category: simpleProduct?.category ?? "",
         fileId: photo.file_id,
         imageUrl: storedImage.imageUrl,
         mediaGroupId: message.media_group_id,
@@ -540,6 +551,7 @@ export async function POST(request: Request) {
         fileIds: album.fileIds,
         imageUrls: album.imageUrls,
         notes: album.notes,
+        category: album.category,
         price: album.price,
         updateId: album.updateId,
         userId: album.userId,
@@ -565,6 +577,7 @@ export async function POST(request: Request) {
         fileIds: [photo.file_id],
         imageUrls: [storedImage.imageUrl],
         notes: simpleProduct.notes,
+        category: simpleProduct.category,
         price: simpleProduct.price,
         updateId,
         userId,

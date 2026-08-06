@@ -317,8 +317,9 @@ export function parseProductCaption(caption?: string): ParsedCaption {
 export const telegramCaptionTemplate = `AI ile yeni urun olusturmak icin fotograf gonderip aciklamasina yalnizca fiyati yaz:
 
 Fiyat: 499.90
+Kategori: Biblo
 
-Bot gorseli analiz eder, Trendyol kategorisini ve zorunlu ozellikleri secer, SEO baslik/aciklama taslagini onayina gonderir. Onay vermeden urun yuklenmez.
+Bot yazdigin alt kategoriyi Trendyol'un guncel kategori agacinda bulur, gorselden zorunlu ozellikleri secer ve SEO baslik/aciklama taslagini onayina gonderir. Onay vermeden urun yuklenmez.
 
 Birden fazla fotograf icin fotograflari Telegram'da tek album olarak sec. Fiyati albumun ilk fotograf aciklamasina yaz. Ilk gorsel AI tarafindan analiz edilir; en fazla 8 album gorseli Trendyol'a ayni sirayla yuklenir.
 

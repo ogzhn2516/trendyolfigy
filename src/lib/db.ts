@@ -268,11 +268,13 @@ async function ensureSchema() {
           telegram_user_id TEXT NOT NULL,
           telegram_chat_id TEXT NOT NULL,
           price NUMERIC(12, 2),
+          category TEXT NOT NULL DEFAULT '',
           notes TEXT NOT NULL DEFAULT '',
           status TEXT NOT NULL DEFAULT 'collecting',
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `;
+      await sql`ALTER TABLE telegram_product_albums ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT ''`;
       await sql`
         CREATE TABLE IF NOT EXISTS telegram_product_album_photos (
           media_group_id TEXT NOT NULL REFERENCES telegram_product_albums(media_group_id) ON DELETE CASCADE,
@@ -717,6 +719,7 @@ export async function findDraftByTelegramUpdateId(updateId: string) {
 
 export async function addTelegramAlbumPhoto(input: {
   chatId: string;
+  category: string;
   fileId: string;
   imageUrl: string;
   mediaGroupId: string;
@@ -729,12 +732,13 @@ export async function addTelegramAlbumPhoto(input: {
   const sql = getSql();
   await sql`
     INSERT INTO telegram_product_albums (
-      media_group_id, telegram_user_id, telegram_chat_id, price, notes
+      media_group_id, telegram_user_id, telegram_chat_id, price, category, notes
     ) VALUES (
-      ${input.mediaGroupId}, ${input.userId}, ${input.chatId}, ${input.price}, ${input.notes}
+      ${input.mediaGroupId}, ${input.userId}, ${input.chatId}, ${input.price}, ${input.category}, ${input.notes}
     )
     ON CONFLICT (media_group_id) DO UPDATE SET
       price = COALESCE(EXCLUDED.price, telegram_product_albums.price),
+      category = CASE WHEN EXCLUDED.category <> '' THEN EXCLUDED.category ELSE telegram_product_albums.category END,
       notes = CASE WHEN EXCLUDED.notes <> '' THEN EXCLUDED.notes ELSE telegram_product_albums.notes END
   `;
   const inserted = await sql`
@@ -760,6 +764,7 @@ export async function claimTelegramAlbum(mediaGroupId: string) {
   const sql = getSql();
   const albums = await sql<Array<{
     media_group_id: string;
+    category: string;
     notes: string;
     price: number | string | null;
     telegram_chat_id: string;
@@ -781,6 +786,7 @@ export async function claimTelegramAlbum(mediaGroupId: string) {
   `;
   return {
     chatId: albums[0].telegram_chat_id,
+    category: albums[0].category,
     fileIds: photos.map((photo) => photo.telegram_file_id),
     imageUrls: photos.map((photo) => photo.image_url),
     notes: albums[0].notes,
