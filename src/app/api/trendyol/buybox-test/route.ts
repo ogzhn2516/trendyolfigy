@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { getBuyboxAlertChatIds, sendTelegramMessage } from "@/lib/telegram";
-import { getCommerceDashboardData } from "@/lib/trendyol-commerce-intelligence";
+import { getBuyboxAlertChatIds } from "@/lib/telegram";
+import { sendManualBuyboxReport } from "@/lib/trendyol-commerce-intelligence";
 import { getTrendyolErrorSummary } from "@/lib/trendyol";
 
 export const dynamic = "force-dynamic";
@@ -29,25 +29,18 @@ export async function POST(request: Request) {
   }
 
   try {
-    const dashboard = await getCommerceDashboardData();
-    const healthy = dashboard.databaseBacked && dashboard.errors.length === 0;
-    const message = [
-      healthy ? "BuyBox sistem testi basarili" : "BuyBox sistem testi eksik bulundu",
-      `Izlenen urun: ${dashboard.trackedProducts}`,
-      `BuyBox kaybi: ${dashboard.buyboxLost}`,
-      `Trendyol okuma hatasi: ${dashboard.errors.length}`,
-      `Veritabani: ${dashboard.databaseBacked ? "hazir" : "eksik"}`,
-    ].join("\n");
-
-    await Promise.all(chatIds.map((chatId) => sendTelegramMessage(chatId, message)));
+    const reports = await Promise.all(
+      chatIds.map((chatId) => sendManualBuyboxReport(chatId)),
+    );
+    const report = reports[0];
+    const healthy = reports.every((item) => item.errors.length === 0);
 
     return NextResponse.json({
-      buyboxLost: dashboard.buyboxLost,
-      databaseBacked: dashboard.databaseBacked,
-      errors: dashboard.errors,
+      buyboxLost: report?.lost ?? 0,
+      errors: reports.flatMap((item) => item.errors),
       ok: healthy,
       recipients: chatIds.length,
-      trackedProducts: dashboard.trackedProducts,
+      trackedProducts: report?.tracked ?? 0,
     }, { status: healthy ? 200 : 503 });
   } catch (error) {
     console.error("BuyBox end-to-end test failed.", error);
