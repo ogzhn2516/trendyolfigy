@@ -65,7 +65,7 @@ function categoryName(product: ApiRecord) {
   return text(category.name) || text(product.categoryName);
 }
 
-function attributeLines(product: ApiRecord) {
+function attributePairs(product: ApiRecord) {
   const attributes = Array.isArray(product.attributes) ? product.attributes : [];
 
   return attributes
@@ -78,19 +78,67 @@ function attributeLines(product: ApiRecord) {
         text(attributeValue.name) ||
         text(item.customAttributeValue) ||
         text(item.attributeValue);
-      return name && value ? `${name}: ${value}` : "";
+      return name && value ? { name, value } : null;
     })
-    .filter(Boolean)
-    .filter((line, index, lines) => lines.indexOf(line) === index)
+    .filter((item): item is { name: string; value: string } => Boolean(item))
+    .filter(
+      (item, index, items) =>
+        items.findIndex(
+          (candidate) =>
+            candidate.name.toLocaleLowerCase("tr-TR") === item.name.toLocaleLowerCase("tr-TR") &&
+            candidate.value.toLocaleLowerCase("tr-TR") === item.value.toLocaleLowerCase("tr-TR"),
+        ) === index,
+    )
     .slice(0, 10);
+}
+
+function attributeLines(product: ApiRecord) {
+  return attributePairs(product).map((item) => `${item.name}: ${item.value}`);
+}
+
+const titleAttributePriority = [
+  "materyal",
+  "tema",
+  "renk",
+  "boyut",
+  "ebat",
+  "olcu",
+  "kullanim",
+  "stil",
+  "desen",
+  "karakter",
+];
+
+function titleKeywords(product: ApiRecord) {
+  return attributePairs(product)
+    .filter((item) => !/^(yok|hayir|belirtilmemis|standart)$/i.test(item.value))
+    .sort((a, b) => {
+      const priority = (name: string) => {
+        const normalized = name.toLocaleLowerCase("tr-TR");
+        const index = titleAttributePriority.findIndex((key) => normalized.includes(key));
+        return index === -1 ? 99 : index;
+      };
+      return priority(a.name) - priority(b.name);
+    })
+    .map((item) => item.value)
+    .filter((value, index, values) =>
+      values.findIndex((candidate) => candidate.toLocaleLowerCase("tr-TR") === value.toLocaleLowerCase("tr-TR")) === index,
+    );
 }
 
 function suggestedTitle(product: ApiRecord, currentTitle: string) {
   let result = normalizeTitle(currentTitle);
   const category = categoryName(product);
 
-  if (category && result.length < 70 && !result.toLocaleLowerCase("tr-TR").includes(category.toLocaleLowerCase("tr-TR"))) {
-    result = `${result} | ${category}`;
+  const candidates = [category, ...titleKeywords(product)];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const normalizedResult = result.toLocaleLowerCase("tr-TR");
+    const normalizedCandidate = candidate.toLocaleLowerCase("tr-TR");
+    if (normalizedResult.includes(normalizedCandidate)) continue;
+
+    const next = `${result} | ${candidate}`;
+    if (next.length <= 100) result = next;
   }
 
   return truncateTitle(result);
@@ -130,8 +178,19 @@ export function analyzeSeoProduct(product: ApiRecord): SeoProduct | null {
   let score = 100;
 
   if (title.length < 30) { score -= 20; issues.push("Baslik cok kisa"); }
+  else if (title.length < 45) { score -= 10; issues.push("Baslik arama kelimeleriyle gelistirilebilir"); }
   if (title.length > 100) { score -= 30; issues.push("Baslik 100 karakterden uzun"); }
   if (/([!?|,-])\1{1,}/.test(title)) { score -= 10; issues.push("Baslikta gereksiz isaret tekrari var"); }
+  const category = categoryName(product);
+  if (category && !title.toLocaleLowerCase("tr-TR").includes(category.toLocaleLowerCase("tr-TR"))) {
+    score -= 15;
+    issues.push("Baslikta kategori arama kelimesi eksik");
+  }
+  const keywords = titleKeywords(product);
+  if (keywords.length && !keywords.some((keyword) => title.toLocaleLowerCase("tr-TR").includes(keyword.toLocaleLowerCase("tr-TR")))) {
+    score -= 10;
+    issues.push("Baslikta ayirt edici urun ozelligi eksik");
+  }
   if (plainDescription.length < 120) { score -= 35; issues.push("Aciklama eksik veya cok kisa"); }
   else if (plainDescription.length < 250) { score -= 15; issues.push("Aciklama gelistirilebilir"); }
   if (!/<p|<ul|<li|<br/i.test(description)) { score -= 10; issues.push("Aciklama okunabilir HTML yapisinda degil"); }
