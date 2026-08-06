@@ -47,9 +47,7 @@ function escapeHtml(value: string) {
 
 function normalizeTitle(value: string) {
   return value
-    .replace(/[|]{2,}/g, " | ")
-    .replace(/[-]{2,}/g, " - ")
-    .replace(/\s*([|,-])\s*/g, " $1 ")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -57,7 +55,32 @@ function normalizeTitle(value: string) {
 function truncateTitle(value: string) {
   if (value.length <= 100) return value;
   const shortened = value.slice(0, 100);
-  return shortened.replace(/\s+\S*$/, "").replace(/[|,\-\s]+$/, "").trim();
+  return shortened.replace(/\s+\S*$/, "").trim();
+}
+
+function wordsOf(value: string) {
+  return value.split(/\s+/).filter(Boolean);
+}
+
+function titleCase(value: string) {
+  return wordsOf(value)
+    .map((word) => {
+      const lower = word.toLocaleLowerCase("tr-TR");
+      return `${lower.charAt(0).toLocaleUpperCase("tr-TR")}${lower.slice(1)}`;
+    })
+    .join(" ");
+}
+
+function removeRepeatedWords(value: string) {
+  const seen = new Set<string>();
+  return wordsOf(value)
+    .filter((word) => {
+      const normalized = word.toLocaleLowerCase("tr-TR");
+      if (seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    })
+    .join(" ");
 }
 
 function categoryName(product: ApiRecord) {
@@ -100,9 +123,6 @@ const titleAttributePriority = [
   "materyal",
   "tema",
   "renk",
-  "boyut",
-  "ebat",
-  "olcu",
   "kullanim",
   "stil",
   "desen",
@@ -111,6 +131,7 @@ const titleAttributePriority = [
 
 function titleKeywords(product: ApiRecord) {
   return attributePairs(product)
+    .filter((item) => !/(beden|boyut|ebat|ölçü|olcu|adet)/i.test(item.name))
     .filter((item) => !/^(yok|hayir|belirtilmemis|standart)$/i.test(item.value))
     .sort((a, b) => {
       const priority = (name: string) => {
@@ -129,6 +150,15 @@ function titleKeywords(product: ApiRecord) {
 function suggestedTitle(product: ApiRecord, currentTitle: string) {
   let result = normalizeTitle(currentTitle);
   const category = categoryName(product);
+  const brand = text(record(product.brand).name) || text(product.brandName);
+  const barcode = text(product.barcode);
+  const stockCode = text(product.stockCode);
+
+  for (const forbidden of [brand, barcode, stockCode]) {
+    if (!forbidden) continue;
+    result = result.replace(new RegExp(`\\b${forbidden.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "giu"), " ");
+  }
+  result = removeRepeatedWords(normalizeTitle(result));
 
   const candidates = [category, ...titleKeywords(product)];
   for (const candidate of candidates) {
@@ -137,11 +167,12 @@ function suggestedTitle(product: ApiRecord, currentTitle: string) {
     const normalizedCandidate = candidate.toLocaleLowerCase("tr-TR");
     if (normalizedResult.includes(normalizedCandidate)) continue;
 
-    const next = `${result} | ${candidate}`;
-    if (next.length <= 100) result = next;
+    const next = removeRepeatedWords(`${result} ${normalizeTitle(candidate)}`);
+    if (wordsOf(result).length < 13 && wordsOf(next).length <= 13 && next.length <= 100) result = next;
   }
 
-  return truncateTitle(result);
+  result = wordsOf(result).slice(0, 13).join(" ");
+  return titleCase(truncateTitle(result));
 }
 
 function suggestedDescription(product: ApiRecord, title: string, current: string) {
@@ -176,11 +207,16 @@ export function analyzeSeoProduct(product: ApiRecord): SeoProduct | null {
   const plainDescription = plainHtml(description);
   const issues: string[] = [];
   let score = 100;
+  const titleWordCount = wordsOf(normalizeTitle(title)).length;
 
-  if (title.length < 30) { score -= 20; issues.push("Baslik cok kisa"); }
-  else if (title.length < 45) { score -= 10; issues.push("Baslik arama kelimeleriyle gelistirilebilir"); }
+  if (titleWordCount < 9) { score -= 20; issues.push("Baslik 9 kelimeden kisa"); }
+  if (titleWordCount > 13) { score -= 15; issues.push("Baslik 13 kelimeden uzun"); }
   if (title.length > 100) { score -= 30; issues.push("Baslik 100 karakterden uzun"); }
-  if (/([!?|,-])\1{1,}/.test(title)) { score -= 10; issues.push("Baslikta gereksiz isaret tekrari var"); }
+  if (/[^\p{L}\p{N}\s]/u.test(title)) { score -= 10; issues.push("Baslikta gereksiz sembol veya noktalama var"); }
+  if (wordsOf(normalizeTitle(title)).length !== new Set(wordsOf(normalizeTitle(title)).map((word) => word.toLocaleLowerCase("tr-TR"))).size) {
+    score -= 10;
+    issues.push("Baslikta tekrarlayan kelime var");
+  }
   const category = categoryName(product);
   if (category && !title.toLocaleLowerCase("tr-TR").includes(category.toLocaleLowerCase("tr-TR"))) {
     score -= 15;
