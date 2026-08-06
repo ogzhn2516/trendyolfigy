@@ -92,6 +92,40 @@ function rankCategories(candidates: CategoryCandidate[], query: string) {
     .map((item) => item.candidate);
 }
 
+function normalizedValue(value: string) {
+  return value.toLocaleLowerCase("tr-TR").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, " ").trim();
+}
+
+function bestAttributeValue(values: Array<{ id: number; name: string }>, hint: string) {
+  const wanted = normalizedValue(hint);
+  if (!wanted) return null;
+  const wantedWords = wanted.split(/\s+/).filter(Boolean);
+  const ranked = values.map((value) => {
+    const candidate = normalizedValue(value.name);
+    const overlap = wantedWords.filter((word) => candidate.includes(word)).length;
+    const score = candidate === wanted ? 20 : candidate.includes(wanted) || wanted.includes(candidate) ? 10 : overlap;
+    return { score, value };
+  }).sort((a, b) => b.score - a.score);
+  return ranked[0]?.score > 0 ? ranked[0].value : null;
+}
+
+function propertyHint(attributeName: string, properties: ApiRecord, fallback: string) {
+  const name = normalizedValue(attributeName);
+  if (name.includes("parca")) return text(properties.pieceCount) || "1";
+  if (name.includes("web color")) {
+    const color = text(properties.webColor) || text(properties.color);
+    return /\bve\b|,|\//i.test(color) ? `${color} Cok Renkli` : color;
+  }
+  if (name.includes("renk")) return text(properties.color);
+  if (name.includes("mensei")) return text(properties.origin) || "Turkiye";
+  if (name.includes("boyut") || name.includes("ebat") || name.includes("olcu")) return text(properties.size) || "Standart";
+  if (name.includes("materyal") || name.includes("malzeme")) {
+    const material = text(properties.material);
+    return /pla|petg|abs/i.test(material) ? `${material} Plastik` : material;
+  }
+  return fallback;
+}
+
 function categoryAttributes(value: unknown) {
   const body = record(value);
   const items = Array.isArray(body.categoryAttributes)
@@ -119,7 +153,7 @@ export async function analyzeNewProductImage(imageInput: string | string[], user
     },
   })));
   const vision = await gemini([
-    { text: `Gorseldeki urunu analiz et. Turkce JSON dondur: title (Trendyol Akademi kurallarina uygun 9-13 kelime, en fazla 100 karakter), description (HTML etiketi olmadan 2-4 kisa paragraf ve dogal SEO), searchTerms (Trendyol kategori aramasi icin 3 kisa genel kategori terimi), vatRate (0,1,10 veya 20), dimensionalWeight (pozitif sayi). Marka, barkod, stok, emoji, abarti veya gorselde olmayan ozellik yazma. Saticinin ek notlari varsa dogru urun ozellikleri olarak kullan: ${userNotes.slice(0, 1000) || "yok"}` },
+    { text: `Gorseldeki urunu analiz et. Turkce JSON dondur: title (Trendyol Akademi kurallarina uygun 9-13 kelime, en fazla 100 karakter), description (HTML etiketi olmadan 2-4 kisa paragraf ve dogal SEO), searchTerms (Trendyol kategori aramasi icin 3 kisa genel kategori terimi), vatRate (0,1,10 veya 20), dimensionalWeight (pozitif sayi), properties ({"pieceCount":"1","color":"...","webColor":"...","size":"...","material":"...","origin":"Turkiye"}). Marka, barkod, stok, emoji veya abarti yazma. Gorulebilen ozellikleri ve saticinin ek notlarini kullan: ${userNotes.slice(0, 1000) || "yok"}` },
     ...imageParts,
   ], 32_000, "Coklu gorsel analizi");
   const searchTerms = Array.isArray(vision.searchTerms) ? vision.searchTerms.map(text).filter(Boolean).slice(0, 3) : [];
@@ -160,6 +194,17 @@ export async function analyzeNewProductImage(imageInput: string | string[], user
     ], 25_000, "Kategori ozellik secimi");
     const selections = Array.isArray(selected.attributes) ? selected.attributes.map(record) : [];
     attributes = selections.map((item) => ({ attributeId: Number(item.attributeId), attributeValueId: Number(item.attributeValueId) })).filter((item) => Number.isFinite(item.attributeId) && Number.isFinite(item.attributeValueId));
+    const properties = record(vision.properties);
+    const alreadySelected = new Set(attributes.map((item) => item.attributeId));
+    for (const item of compact.filter((entry) => !alreadySelected.has(entry.attributeId))) {
+      const hint = propertyHint(item.name, properties, `${userNotes} ${title} ${description}`);
+      const matched = bestAttributeValue(item.values, hint);
+      if (matched) {
+        attributes.push({ attributeId: item.attributeId, attributeValueId: matched.id });
+      } else if (item.allowCustom && hint.trim()) {
+        attributes.push({ attributeId: item.attributeId, customAttributeValue: hint.trim().slice(0, 100) });
+      }
+    }
     const selectedIds = new Set(attributes.map((item) => item.attributeId));
     const missing = compact.filter((item) => !selectedIds.has(item.attributeId)).map((item) => item.name).filter(Boolean);
     if (missing.length) throw new Error(`Fotograftan belirlenemeyen zorunlu bilgiler: ${missing.join(", ")}. Bu bilgileri fotograf aciklamasina ekleyip yeniden gonderin.`);
