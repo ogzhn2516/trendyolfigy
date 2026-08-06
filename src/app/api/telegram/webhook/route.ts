@@ -2,6 +2,8 @@ import { parseProductCaption, telegramCaptionTemplate } from "@/lib/caption";
 import type { ProductDraft } from "@/lib/db";
 import {
   clearPendingTelegramPriceUpdate,
+  addTelegramAlbumPhoto,
+  claimTelegramAlbum,
   findDraftByTelegramUpdateId,
   getDraftById,
   getPendingTelegramPriceUpdate,
@@ -302,6 +304,53 @@ function imageCaptionPrice(caption?: string) {
   return price === null ? null : { notes: match?.[2]?.trim() || "", price };
 }
 
+async function createAiDraftAndNotify(input: {
+  chatId: number | string;
+  fileIds: string[];
+  imageUrls: string[];
+  notes: string;
+  price: number;
+  updateId: string;
+  userId: string;
+}) {
+  const ai = await analyzeNewProductImage(input.imageUrls, input.notes);
+  const draft = await insertDraft({
+    attributes: ai.attributes,
+    categoryId: ai.categoryId,
+    description: ai.description,
+    dimensionalWeight: ai.dimensionalWeight,
+    imageUrl: input.imageUrls[0],
+    imageUrls: input.imageUrls,
+    lastError: `AI kategori: ${ai.categoryName}`,
+    listPrice: input.price,
+    quantity: 1000,
+    salePrice: input.price,
+    status: "needs_review",
+    telegramChatId: telegramId(input.chatId),
+    telegramFileId: input.fileIds[0] ?? null,
+    telegramUpdateId: input.updateId,
+    telegramUserId: input.userId,
+    title: ai.title,
+    vatRate: ai.vatRate,
+  });
+  const cleanDescription = ai.description.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  await sendTelegramMessage(input.chatId, [
+    "🤖 AI urun taslagi hazir",
+    `Urun: ${draft.title}`,
+    `Kategori: ${ai.categoryName} (${ai.categoryId})`,
+    `Gorsel: ${input.imageUrls.length}`,
+    `Fiyat: ${input.price.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL`,
+    `KDV: %${ai.vatRate}`,
+    `Zorunlu ozellik: ${ai.attributes.length}`,
+    `Aciklama: ${cleanDescription.slice(0, 900)}`,
+    "\nBilgileri kontrol edip onaylayin. Onay verilmeden Trendyol'a yuklenmez.",
+  ].join("\n"), { inlineKeyboard: [[
+    { callbackData: `pa|${draft.id}`, text: "✅ Onayla ve Yukle" },
+    { callbackData: `px|${draft.id}`, text: "❌ Iptal" },
+  ]] });
+  return draft;
+}
+
 function getDirectDraft(
   updateId: string,
   chatId: string,
@@ -322,6 +371,7 @@ function getDirectDraft(
     dimensionalWeight: parsedCaption.dimensionalWeight,
     id: updateId,
     imageUrl,
+    imageUrls: imageUrl ? [imageUrl] : [],
     lastError: null,
     listPrice: parsedCaption.listPrice ?? parsedCaption.salePrice!,
     productMainId: parsedCaption.productMainId ?? generatedCode("MAIN", updateId),
@@ -459,6 +509,48 @@ export async function POST(request: Request) {
   if (!photo) return Response.json({ ok: true });
   const simpleProduct = imageCaptionPrice(message.caption);
 
+  if (message.media_group_id) {
+    if (!databaseEnabled) {
+      await sendTelegramMessage(chatId, "Coklu fotograf akisi icin veritabani baglantisi gerekli.");
+      return Response.json({ ok: true });
+    }
+    try {
+      const storedImage = await storeTelegramPhoto(photo.file_id, updateId);
+      if (!storedImage.imageUrl) throw new Error(storedImage.warning || "Kalici urun gorseli olusturulamadi.");
+      await addTelegramAlbumPhoto({
+        chatId: telegramId(chatId),
+        fileId: photo.file_id,
+        imageUrl: storedImage.imageUrl,
+        mediaGroupId: message.media_group_id,
+        notes: simpleProduct?.notes ?? "",
+        price: simpleProduct?.price ?? null,
+        updateId,
+        userId,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      const album = await claimTelegramAlbum(message.media_group_id);
+      if (!album) return Response.json({ mode: "album-collecting", ok: true });
+      if (album.price === null) {
+        await sendTelegramMessage(chatId, "Album alindi fakat fiyat bulunamadi. Fotograflari yeniden album olarak gonderip ilk fotograf aciklamasina `Fiyat: 349.90` yazin.");
+        return Response.json({ mode: "album-missing-price", ok: true });
+      }
+      await sendTelegramMessage(chatId, `🤖 ${album.imageUrls.length} gorsel birlikte analiz ediliyor; kategori ve SEO taslagi hazirlaniyor...`);
+      const draft = await createAiDraftAndNotify({
+        chatId,
+        fileIds: album.fileIds,
+        imageUrls: album.imageUrls,
+        notes: album.notes,
+        price: album.price,
+        updateId: album.updateId,
+        userId: album.userId,
+      });
+      return Response.json({ draftId: draft.id, mode: "ai-album-approval", ok: true });
+    } catch (error) {
+      await sendTelegramMessage(chatId, `AI urun albumu hazirlanamadi: ${error instanceof Error ? error.message : "Bilinmeyen hata"}`);
+      return Response.json({ ok: true });
+    }
+  }
+
   if (simpleProduct !== null) {
     if (!databaseEnabled) {
       await sendTelegramMessage(chatId, "AI urun onay akisi icin veritabani baglantisi gerekli.");
@@ -468,43 +560,15 @@ export async function POST(request: Request) {
     try {
       const storedImage = await storeTelegramPhoto(photo.file_id, updateId);
       if (!storedImage.imageUrl) throw new Error(storedImage.warning || "Kalici urun gorseli olusturulamadi.");
-      const ai = await analyzeNewProductImage(storedImage.imageUrl, simpleProduct.notes);
-      const draft = await insertDraft({
-        attributes: ai.attributes,
-        categoryId: ai.categoryId,
-        description: ai.description,
-        dimensionalWeight: ai.dimensionalWeight,
-        imageUrl: storedImage.imageUrl,
-        lastError: `AI kategori: ${ai.categoryName}`,
-        listPrice: simpleProduct.price,
-        quantity: 1000,
-        salePrice: simpleProduct.price,
-        status: "needs_review",
-        telegramChatId: telegramId(chatId),
-        telegramFileId: photo.file_id,
-        telegramUpdateId: updateId,
-        telegramUserId: userId,
-        title: ai.title,
-        vatRate: ai.vatRate,
-      });
-      const cleanDescription = ai.description.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-      await sendTelegramMessage(
+      const draft = await createAiDraftAndNotify({
         chatId,
-        [
-          "🤖 AI urun taslagi hazir",
-          `Urun: ${draft.title}`,
-          `Kategori: ${ai.categoryName} (${ai.categoryId})`,
-          `Fiyat: ${simpleProduct.price.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL`,
-          `KDV: %${ai.vatRate}`,
-          `Zorunlu ozellik: ${ai.attributes.length}`,
-          `Aciklama: ${cleanDescription.slice(0, 900)}`,
-          "\nBilgileri kontrol edip onaylayin. Onay verilmeden Trendyol'a yuklenmez.",
-        ].join("\n"),
-        { inlineKeyboard: [[
-          { callbackData: `pa|${draft.id}`, text: "✅ Onayla ve Yukle" },
-          { callbackData: `px|${draft.id}`, text: "❌ Iptal" },
-        ]] },
-      );
+        fileIds: [photo.file_id],
+        imageUrls: [storedImage.imageUrl],
+        notes: simpleProduct.notes,
+        price: simpleProduct.price,
+        updateId,
+        userId,
+      });
       return Response.json({ draftId: draft.id, mode: "ai-approval", ok: true });
     } catch (error) {
       await sendTelegramMessage(chatId, `AI urun taslagi hazirlanamadi: ${error instanceof Error ? error.message : "Bilinmeyen hata"}`);

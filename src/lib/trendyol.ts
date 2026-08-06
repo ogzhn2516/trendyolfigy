@@ -144,7 +144,7 @@ export function buildTrendyolPayload(draft: ProductDraft) {
     categoryId: draft.categoryId,
     description: formatDescription(draft.description),
     dimensionalWeight: draft.dimensionalWeight,
-    images: [{ url: draft.imageUrl }],
+    images: (draft.imageUrls.length ? draft.imageUrls : [draft.imageUrl]).slice(0, 8).map((url) => ({ url })),
     listPrice: draft.listPrice,
     productMainId: draft.productMainId,
     quantity: draft.quantity,

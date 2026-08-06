@@ -22,6 +22,7 @@ export type ProductDraft = {
   dimensionalWeight: number;
   id: string;
   imageUrl: string | null;
+  imageUrls: string[];
   lastError: string | null;
   listPrice: number;
   productMainId: string;
@@ -112,6 +113,7 @@ type ProductRow = {
   dimensional_weight: number | string;
   id: string;
   image_url: string | null;
+  image_urls: string[] | null;
   last_error: string | null;
   list_price: number | string;
   product_main_id: string;
@@ -144,6 +146,7 @@ type NewDraft = {
   description: string;
   dimensionalWeight: number;
   imageUrl: string | null;
+  imageUrls?: string[];
   lastError?: string | null;
   listPrice: number;
   productMainId?: string;
@@ -166,6 +169,7 @@ type ProductUpdate = {
   description: string;
   dimensionalWeight: number;
   imageUrl: string | null;
+  imageUrls?: string[];
   listPrice: number;
   productMainId: string;
   quantity: number;
@@ -243,6 +247,7 @@ async function ensureSchema() {
           dimensional_weight NUMERIC(10, 2) NOT NULL DEFAULT 1,
           attributes JSONB NOT NULL DEFAULT '[]'::jsonb,
           image_url TEXT,
+          image_urls JSONB NOT NULL DEFAULT '[]'::jsonb,
           barcode TEXT NOT NULL,
           stock_code TEXT NOT NULL,
           product_main_id TEXT NOT NULL,
@@ -254,6 +259,27 @@ async function ensureSchema() {
           submitted_at TIMESTAMPTZ,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      await sql`ALTER TABLE product_drafts ADD COLUMN IF NOT EXISTS image_urls JSONB NOT NULL DEFAULT '[]'::jsonb`;
+      await sql`
+        CREATE TABLE IF NOT EXISTS telegram_product_albums (
+          media_group_id TEXT PRIMARY KEY,
+          telegram_user_id TEXT NOT NULL,
+          telegram_chat_id TEXT NOT NULL,
+          price NUMERIC(12, 2),
+          notes TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'collecting',
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS telegram_product_album_photos (
+          media_group_id TEXT NOT NULL REFERENCES telegram_product_albums(media_group_id) ON DELETE CASCADE,
+          telegram_update_id TEXT NOT NULL UNIQUE,
+          telegram_file_id TEXT NOT NULL,
+          image_url TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `;
       await sql`
@@ -288,6 +314,7 @@ function mapProduct(row: ProductRow): ProductDraft {
     dimensionalWeight: Number(row.dimensional_weight),
     id: row.id,
     imageUrl: row.image_url,
+    imageUrls: row.image_urls?.length ? row.image_urls : row.image_url ? [row.image_url] : [],
     lastError: row.last_error,
     listPrice: Number(row.list_price),
     productMainId: row.product_main_id,
@@ -688,6 +715,81 @@ export async function findDraftByTelegramUpdateId(updateId: string) {
   return rows[0] ? mapProduct(rows[0]) : null;
 }
 
+export async function addTelegramAlbumPhoto(input: {
+  chatId: string;
+  fileId: string;
+  imageUrl: string;
+  mediaGroupId: string;
+  notes: string;
+  price: number | null;
+  updateId: string;
+  userId: string;
+}) {
+  await ensureSchema();
+  const sql = getSql();
+  await sql`
+    INSERT INTO telegram_product_albums (
+      media_group_id, telegram_user_id, telegram_chat_id, price, notes
+    ) VALUES (
+      ${input.mediaGroupId}, ${input.userId}, ${input.chatId}, ${input.price}, ${input.notes}
+    )
+    ON CONFLICT (media_group_id) DO UPDATE SET
+      price = COALESCE(EXCLUDED.price, telegram_product_albums.price),
+      notes = CASE WHEN EXCLUDED.notes <> '' THEN EXCLUDED.notes ELSE telegram_product_albums.notes END
+  `;
+  const inserted = await sql`
+    INSERT INTO telegram_product_album_photos (
+      media_group_id, telegram_update_id, telegram_file_id, image_url
+    ) VALUES (
+      ${input.mediaGroupId}, ${input.updateId}, ${input.fileId}, ${input.imageUrl}
+    )
+    ON CONFLICT (telegram_update_id) DO NOTHING
+    RETURNING telegram_update_id
+  `;
+  if (inserted.length) {
+    await sql`
+      UPDATE telegram_product_albums
+      SET updated_at = NOW()
+      WHERE media_group_id = ${input.mediaGroupId} AND status = 'collecting'
+    `;
+  }
+}
+
+export async function claimTelegramAlbum(mediaGroupId: string) {
+  await ensureSchema();
+  const sql = getSql();
+  const albums = await sql<Array<{
+    media_group_id: string;
+    notes: string;
+    price: number | string | null;
+    telegram_chat_id: string;
+    telegram_user_id: string;
+  }>>`
+    UPDATE telegram_product_albums
+    SET status = 'processing'
+    WHERE media_group_id = ${mediaGroupId}
+      AND status = 'collecting'
+      AND updated_at < NOW() - INTERVAL '1.5 seconds'
+    RETURNING *
+  `;
+  if (!albums[0]) return null;
+  const photos = await sql<Array<{ image_url: string; telegram_file_id: string; telegram_update_id: string }>>`
+    SELECT image_url, telegram_file_id, telegram_update_id
+    FROM telegram_product_album_photos
+    WHERE media_group_id = ${mediaGroupId}
+    ORDER BY created_at ASC
+  `;
+  return {
+    chatId: albums[0].telegram_chat_id,
+    fileIds: photos.map((photo) => photo.telegram_file_id),
+    imageUrls: photos.map((photo) => photo.image_url),
+    notes: albums[0].notes,
+    price: albums[0].price === null ? null : Number(albums[0].price),
+    updateId: photos[0]?.telegram_update_id ?? mediaGroupId,
+    userId: albums[0].telegram_user_id,
+  };
+}
+
 export async function insertDraft(input: NewDraft) {
   await ensureSchema();
   const sql = getSql();
@@ -708,6 +810,7 @@ export async function insertDraft(input: NewDraft) {
       dimensional_weight,
       attributes,
       image_url,
+      image_urls,
       barcode,
       stock_code,
       product_main_id,
@@ -730,6 +833,7 @@ export async function insertDraft(input: NewDraft) {
       ${input.dimensionalWeight},
       ${sql.json(input.attributes)},
       ${input.imageUrl},
+      ${sql.json(input.imageUrls?.length ? input.imageUrls : input.imageUrl ? [input.imageUrl] : [])},
       ${input.barcode || generatedCode("FIGY", input.telegramUpdateId)},
       ${input.stockCode || generatedCode("STK", input.telegramUpdateId)},
       ${input.productMainId || generatedCode("MAIN", input.telegramUpdateId)},
@@ -789,6 +893,7 @@ export async function updateDraft(id: string, input: ProductUpdate) {
       description = ${input.description},
       dimensional_weight = ${input.dimensionalWeight},
       image_url = ${input.imageUrl},
+      image_urls = ${sql.json(input.imageUrls?.length ? input.imageUrls : input.imageUrl ? [input.imageUrl] : [])},
       list_price = ${input.listPrice},
       product_main_id = ${input.productMainId},
       quantity = ${input.quantity},

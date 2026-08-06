@@ -8,6 +8,7 @@ export type TelegramMessage = {
   caption?: string;
   chat: { id: number | string };
   from?: { id: number | string };
+  media_group_id?: string;
   photo?: Array<{ file_id: string; file_unique_id: string }>;
   reply_to_message?: TelegramMessage;
   text?: string;
