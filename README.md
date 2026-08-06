@@ -191,9 +191,10 @@ or:
 The app sends the change to Trendyol's price-and-inventory API and replies with
 the Trendyol `batchRequestId`.
 
-The production cron calls `/api/trendyol/repricer` every 15 minutes. Configure
-`CRON_SECRET` (or `TRENDYOL_REPRICER_SECRET`) and use a Vercel plan or external
-cron provider that supports this frequency. To run a complete database,
+The included Hobby-compatible production cron calls `/api/trendyol/repricer`
+once per day. Configure `CRON_SECRET` (or `TRENDYOL_REPRICER_SECRET`). For
+15-minute monitoring, use a Vercel plan or external cron provider that supports
+that frequency. To run a complete database,
 Trendyol-read, and Telegram-delivery test:
 
 ```bash
