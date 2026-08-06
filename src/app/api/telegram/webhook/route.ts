@@ -12,6 +12,7 @@ import {
   submitDraftToTrendyol,
 } from "@/lib/products";
 import {
+  answerTelegramCallbackQuery,
   getAllowedTelegramUserIds,
   sendTelegramMessage,
   storeTelegramPhoto,
@@ -119,6 +120,58 @@ async function handlePriceUpdateMessage(
   return true;
 }
 
+async function handleBuyboxPriceButton(update: TelegramUpdate) {
+  const callback = update.callback_query;
+
+  if (!callback?.data?.startsWith("bb|") || !callback.message) {
+    return false;
+  }
+
+  const chatId = callback.message.chat.id;
+  const userId = telegramId(callback.from.id);
+
+  if (!getAllowedTelegramUserIds().has(userId)) {
+    await answerTelegramCallbackQuery(callback.id, "Bu islem icin yetkiniz yok.");
+    return true;
+  }
+
+  const [, barcode, rawPrice] = callback.data.split("|");
+  const salePrice = Number(rawPrice);
+
+  if (!barcode || !Number.isFinite(salePrice) || salePrice <= 0) {
+    await answerTelegramCallbackQuery(callback.id, "Gecersiz fiyat dugmesi.");
+    return true;
+  }
+
+  await answerTelegramCallbackQuery(callback.id, "Fiyat Trendyol'a gonderiliyor...");
+
+  try {
+    const result = await updateSingleProductPrice({ barcode, salePrice });
+    await sendTelegramMessage(
+      chatId,
+      [
+        "Fiyat guncellemesi Trendyol'a gonderildi.",
+        `Urun: ${result.title}`,
+        `Barkod: ${result.barcode}`,
+        `Yeni fiyat: ${result.salePrice.toLocaleString("tr-TR", {
+          maximumFractionDigits: 2,
+          minimumFractionDigits: 2,
+        })} TL`,
+        `Batch ID: ${result.batchRequestId ?? "bekleniyor"}`,
+      ].join("\n"),
+    );
+  } catch (error) {
+    await sendTelegramMessage(
+      chatId,
+      `Fiyat guncellenemedi: ${
+        error instanceof Error ? error.message : "Bilinmeyen hata"
+      }`,
+    );
+  }
+
+  return true;
+}
+
 function getDirectDraft(
   updateId: string,
   chatId: string,
@@ -182,6 +235,11 @@ export async function POST(request: Request) {
   }
 
   const update = (await request.json()) as TelegramUpdate;
+
+  if (await handleBuyboxPriceButton(update)) {
+    return Response.json({ ok: true });
+  }
+
   const message = update.message;
 
   if (!message) {

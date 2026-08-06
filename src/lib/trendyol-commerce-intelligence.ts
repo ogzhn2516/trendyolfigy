@@ -337,6 +337,32 @@ async function sendBuyboxList(
     await sendTelegramMessage(chatId, chunk);
   }
 
+  for (let index = 0; index < lost.length; index += 20) {
+    const batch = lost.slice(index, index + 20);
+    const inlineKeyboard = batch.map((product, batchIndex) => {
+      const targetPrice = Math.round(
+        (product.recommendedPrice ?? product.buyboxPrice ?? product.salePrice) * 100,
+      ) / 100;
+      const productNumber = index + batchIndex + 1;
+
+      return [{
+        callbackData: `bb|${product.barcode}|${targetPrice}`,
+        text: `${productNumber} · ${targetPrice.toLocaleString("tr-TR", {
+          maximumFractionDigits: 2,
+          minimumFractionDigits: 2,
+        })} TL yap`,
+      }];
+    });
+
+    await sendTelegramMessage(
+      chatId,
+      index === 0
+        ? "Hizli fiyat guncelleme: Urunu ve fiyati kontrol edip dugmeye basin."
+        : "Hizli fiyat guncelleme (devam):",
+      { inlineKeyboard },
+    );
+  }
+
   return lost.length;
 }
 

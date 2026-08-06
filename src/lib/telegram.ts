@@ -14,6 +14,12 @@ export type TelegramMessage = {
 };
 
 export type TelegramUpdate = {
+  callback_query?: {
+    data?: string;
+    from: { id: number | string };
+    id: string;
+    message?: TelegramMessage;
+  };
   message?: TelegramMessage;
   update_id: number;
 };
@@ -59,13 +65,27 @@ export function getBuyboxAlertChatIds() {
 export async function sendTelegramMessage(
   chatId: number | string,
   text: string,
-  options: { forceReply?: boolean } = {},
+  options: {
+    forceReply?: boolean;
+    inlineKeyboard?: Array<Array<{ callbackData: string; text: string }>>;
+  } = {},
 ) {
   const response = await fetch(getTelegramApiUrl("sendMessage"), {
     body: JSON.stringify({
       chat_id: chatId,
       disable_web_page_preview: true,
-      ...(options.forceReply
+      ...(options.inlineKeyboard?.length
+        ? {
+            reply_markup: {
+              inline_keyboard: options.inlineKeyboard.map((row) =>
+                row.map((button) => ({
+                  callback_data: button.callbackData,
+                  text: button.text,
+                })),
+              ),
+            },
+          }
+        : options.forceReply
         ? {
             reply_markup: {
               force_reply: true,
@@ -93,6 +113,32 @@ export async function sendTelegramMessage(
   return {
     messageId: body.result?.message_id ?? null,
   };
+}
+
+export async function answerTelegramCallbackQuery(
+  callbackQueryId: string,
+  text: string,
+) {
+  const response = await fetch(getTelegramApiUrl("answerCallbackQuery"), {
+    body: JSON.stringify({
+      callback_query_id: callbackQueryId,
+      show_alert: false,
+      text: text.slice(0, 200),
+    }),
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  const body = (await response.json().catch(() => ({ ok: false }))) as {
+    description?: string;
+    ok: boolean;
+  };
+
+  if (!response.ok || !body.ok) {
+    throw new Error(
+      `Telegram buton cevabi gonderilemedi${body.description ? `: ${body.description}` : ""}.`,
+    );
+  }
 }
 
 async function getTelegramFileUrl(fileId: string) {
