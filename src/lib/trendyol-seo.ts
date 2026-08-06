@@ -309,6 +309,7 @@ async function generateAiSeoContent(product: SeoProduct): Promise<AiSeoContent |
       "X-Title": "Figyfun Trendyol SEO Bot",
     },
     method: "POST",
+    signal: AbortSignal.timeout(25_000),
   });
   const body = await response.json().catch(() => null) as ApiRecord | null;
   if (!response.ok || !body) throw new Error(`AI servisi ${response.status} ile reddedildi.`);
@@ -338,12 +339,21 @@ function batchIdOf(response: unknown) {
 }
 
 export async function applySeoUpdates(contentId?: number) {
-  const lowProducts = await scanLowSeoProducts();
-  const selected = contentId
-    ? lowProducts.filter((product) => product.contentId === contentId)
-    : lowProducts;
+  let selected: SeoProduct[];
 
-  if (!selected.length) return { batchRequestId: null, count: 0 };
+  if (contentId) {
+    const products = await getAllOnSaleProducts();
+    selected = products
+      .map(analyzeSeoProduct)
+      .filter(
+        (product): product is SeoProduct =>
+          Boolean(product && product.contentId === contentId),
+      );
+  } else {
+    selected = await scanLowSeoProducts();
+  }
+
+  if (!selected.length) return { aiCount: 0, batchRequestId: null, count: 0 };
 
   const items = [];
   let aiCount = 0;
