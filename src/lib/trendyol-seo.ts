@@ -286,7 +286,7 @@ async function generateGeminiSeoContent(product: SeoProduct): Promise<AiSeoConte
   if (!imageResponse.ok) throw new Error("Urun gorseli AI icin alinamadi.");
   const imageBase64 = Buffer.from(await imageResponse.arrayBuffer()).toString("base64");
   const prompt = buildAiPrompt(product);
-  const model = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+  const model = process.env.GEMINI_MODEL?.trim() || "gemini-3.6-flash";
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
     {
