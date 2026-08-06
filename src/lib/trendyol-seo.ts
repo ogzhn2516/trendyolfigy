@@ -7,14 +7,19 @@ import { updateApprovedProductContent } from "@/lib/trendyol";
 type ApiRecord = Record<string, unknown>;
 
 export type SeoProduct = {
+  attributes: string[];
+  category: string;
   contentId: number;
   description: string;
+  imageUrl: string | null;
   issues: string[];
   score: number;
   suggestedDescription: string;
   suggestedTitle: string;
   title: string;
 };
+
+type AiSeoContent = { description: string; title: string };
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -117,6 +122,11 @@ function attributePairs(product: ApiRecord) {
 
 function attributeLines(product: ApiRecord) {
   return attributePairs(product).map((item) => `${item.name}: ${item.value}`);
+}
+
+function firstImageUrl(product: ApiRecord) {
+  const images = Array.isArray(product.images) ? product.images : [];
+  return text(record(images[0]).url) || null;
 }
 
 const titleAttributePriority = [
@@ -234,14 +244,83 @@ export function analyzeSeoProduct(product: ApiRecord): SeoProduct | null {
 
   const cleanTitle = suggestedTitle(product, title);
   return {
+    attributes: attributeLines(product),
+    category: categoryName(product),
     contentId,
     description,
+    imageUrl: firstImageUrl(product),
     issues,
     score: Math.max(0, score),
     suggestedDescription: suggestedDescription(product, cleanTitle, description),
     suggestedTitle: cleanTitle,
     title,
   };
+}
+
+function cleanAiDescription(value: string) {
+  return value
+    .replace(/<\/?(?:script|style|iframe|object|embed)[^>]*>/gi, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 30000);
+}
+
+function parseAiJson(value: string) {
+  const cleaned = value.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  const parsed = JSON.parse(cleaned) as Partial<AiSeoContent>;
+  return { description: text(parsed.description), title: text(parsed.title) };
+}
+
+async function generateAiSeoContent(product: SeoProduct): Promise<AiSeoContent | null> {
+  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
+  if (!apiKey || !product.imageUrl) return null;
+
+  const prompt = [
+    "Sen Trendyol urun icerigi uzmanisin. Urun gorselini ve dogrulanmis bilgileri incele.",
+    "Yalnizca JSON dondur: {\"title\":\"...\",\"description\":\"...\"}.",
+    "Baslik Turkce, dogal ve arama niyetine uygun 9-13 kelime, en fazla 100 karakter olsun.",
+    "Her kelimenin ilk harfi buyuk olsun. Marka, barkod, stok, emoji, sembol, tekrar, abarti ve anlamsiz kisaltma kullanma.",
+    "Beden, boyut, ebat, olcu ve adet bilgisini basliga yazma. Gorselde veya veride dogrulanmayan ozellik uydurma.",
+    "Aciklama 2-4 kisa paragraf ve urun ozellikleri listesi iceren sade HTML olsun. SEO kelimelerini dogal kullan.",
+    `Mevcut baslik: ${product.title}`,
+    `Kategori: ${product.category || "Belirtilmemis"}`,
+    `Dogrulanmis ozellikler: ${product.attributes.join("; ") || "Belirtilmemis"}`,
+    `Mevcut aciklama: ${plainHtml(product.description).slice(0, 2500)}`,
+  ].join("\n");
+
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    body: JSON.stringify({
+      max_tokens: 1200,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: prompt },
+          { type: "image_url", image_url: { url: product.imageUrl } },
+        ],
+      }],
+      model: "openrouter/free",
+      temperature: 0.2,
+    }),
+    cache: "no-store",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": "https://trendyolfigy.vercel.app",
+      "X-Title": "Figyfun Trendyol SEO Bot",
+    },
+    method: "POST",
+  });
+  const body = await response.json().catch(() => null) as ApiRecord | null;
+  if (!response.ok || !body) throw new Error(`AI servisi ${response.status} ile reddedildi.`);
+  const choices = Array.isArray(body.choices) ? body.choices : [];
+  const content = text(record(record(choices[0]).message).content);
+  if (!content) throw new Error("AI servisi bos yanit verdi.");
+
+  const generated = parseAiJson(content);
+  const safeTitle = titleCase(truncateTitle(wordsOf(removeRepeatedWords(normalizeTitle(generated.title))).slice(0, 13).join(" ")));
+  const safeDescription = cleanAiDescription(generated.description);
+  if (wordsOf(safeTitle).length < 9 || !safeDescription) throw new Error("AI gecersiz SEO icerigi uretti.");
+  return { description: safeDescription, title: safeTitle };
 }
 
 export async function scanLowSeoProducts() {
@@ -266,14 +345,26 @@ export async function applySeoUpdates(contentId?: number) {
 
   if (!selected.length) return { batchRequestId: null, count: 0 };
 
-  const response = await updateApprovedProductContent(
-    selected.map((product) => ({
+  const items = [];
+  let aiCount = 0;
+  for (const product of selected) {
+    let aiContent: AiSeoContent | null = null;
+    if (contentId) {
+      try {
+        aiContent = await generateAiSeoContent(product);
+      } catch (error) {
+        console.error("AI SEO generation failed; deterministic fallback used.", error);
+      }
+    }
+    if (aiContent) aiCount += 1;
+    items.push({
       contentId: product.contentId,
-      description: product.suggestedDescription,
-      title: product.suggestedTitle,
-    })),
-  );
-  return { batchRequestId: batchIdOf(response), count: selected.length };
+      description: aiContent?.description ?? product.suggestedDescription,
+      title: aiContent?.title ?? product.suggestedTitle,
+    });
+  }
+  const response = await updateApprovedProductContent(items);
+  return { aiCount, batchRequestId: batchIdOf(response), count: selected.length };
 }
 
 export async function sendSeoReport(chatId: number | string) {
@@ -303,7 +394,7 @@ export async function sendSeoReport(chatId: number | string) {
         `Sorunlar: ${product.issues.join(", ")}`,
         `Yeni baslik: ${product.suggestedTitle}`,
       ].join("\n"),
-      { inlineKeyboard: [[{ callbackData: `seo|${product.contentId}`, text: "Bu urunu SEO duzelt" }]] },
+      { inlineKeyboard: [[{ callbackData: `seo|${product.contentId}`, text: "AI ile SEO duzelt" }]] },
     );
   }
 

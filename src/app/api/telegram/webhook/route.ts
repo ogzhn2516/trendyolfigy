@@ -196,7 +196,7 @@ async function handleSeoButton(update: TelegramUpdate) {
   try {
     const result = await applySeoUpdates(contentId);
     await sendTelegramMessage(chatId, result.count
-      ? `SEO guncellemesi ${result.count} urun icin Trendyol onayina gonderildi.\nBatch ID: ${result.batchRequestId ?? "bekleniyor"}`
+      ? `SEO guncellemesi ${result.count} urun icin Trendyol onayina gonderildi.\nYontem: ${result.aiCount ? "AI gorsel analizi" : "guvenli kural tabanli yedek"}\nBatch ID: ${result.batchRequestId ?? "bekleniyor"}`
       : "Guncellenecek dusuk puanli urun bulunamadi.");
   } catch (error) {
     await sendTelegramMessage(chatId, `SEO guncellemesi gonderilemedi: ${error instanceof Error ? error.message : "Bilinmeyen hata"}`);
