@@ -3,9 +3,12 @@ import type { ProductDraft } from "@/lib/db";
 import {
   clearPendingTelegramPriceUpdate,
   findDraftByTelegramUpdateId,
+  getDraftById,
   getPendingTelegramPriceUpdate,
   insertDraft,
+  markDraftCancelled,
 } from "@/lib/db";
+import { analyzeNewProductImage } from "@/lib/ai-product-draft";
 import { hasDatabaseUrl } from "@/lib/env";
 import {
   submitDirectProductToTrendyol,
@@ -249,6 +252,55 @@ async function handleSeoButton(update: TelegramUpdate) {
   return true;
 }
 
+async function handleProductApprovalButton(update: TelegramUpdate) {
+  const callback = update.callback_query;
+  if (!callback?.data || !callback.message || (!callback.data.startsWith("pa|") && !callback.data.startsWith("px|"))) return false;
+  const chatId = callback.message.chat.id;
+  if (!getAllowedTelegramUserIds().has(telegramId(callback.from.id))) {
+    await answerTelegramCallbackQuery(callback.id, "Bu islem icin yetkiniz yok.");
+    return true;
+  }
+  const [action, draftId] = callback.data.split("|");
+  const draft = draftId ? await getDraftById(draftId) : null;
+  if (!draft || draft.telegramChatId !== telegramId(chatId)) {
+    await answerTelegramCallbackQuery(callback.id, "Taslak bulunamadi veya size ait degil.");
+    return true;
+  }
+  if (draft.status === "submitted") {
+    await answerTelegramCallbackQuery(callback.id, "Bu urun daha once Trendyol'a gonderildi.");
+    return true;
+  }
+  if (draft.status === "cancelled") {
+    await answerTelegramCallbackQuery(callback.id, "Bu urun taslagi iptal edildi.");
+    return true;
+  }
+  if (action === "px") {
+    await markDraftCancelled(draft.id);
+    await answerTelegramCallbackQuery(callback.id, "Taslak iptal edildi.");
+    await sendTelegramMessage(chatId, `❌ Urun taslagi iptal edildi.\nUrun: ${draft.title}`);
+    return true;
+  }
+  await answerTelegramCallbackQuery(callback.id, "Urun Trendyol'a gonderiliyor...");
+  try {
+    const result = await submitDraftToTrendyol(draft.id);
+    await sendTelegramMessage(
+      chatId,
+      result?.status === "submitted"
+        ? `✅ Onaylanan urun Trendyol kuyruguna gonderildi.\nUrun: ${draft.title}\nBatch ID: ${result.batchRequestId ?? "bekleniyor"}`
+        : `Urun gonderilemedi: ${result?.lastError ?? "Trendyol kontrolu gerekli."}`,
+    );
+  } catch (error) {
+    await sendTelegramMessage(chatId, `Urun gonderilemedi: ${error instanceof Error ? error.message : "Bilinmeyen hata"}`);
+  }
+  return true;
+}
+
+function imageCaptionPrice(caption?: string) {
+  if (!caption?.trim()) return null;
+  const match = caption.trim().match(/^(?:fiyat\s*:\s*)?([0-9][0-9.,]*)\s*(?:tl)?$/i);
+  return match ? parseTelegramPrice(match[1]) : null;
+}
+
 function getDirectDraft(
   updateId: string,
   chatId: string,
@@ -318,6 +370,10 @@ export async function POST(request: Request) {
   }
 
   if (await handleSeoButton(update)) {
+    return Response.json({ ok: true });
+  }
+
+  if (await handleProductApprovalButton(update)) {
     return Response.json({ ok: true });
   }
 
@@ -398,6 +454,63 @@ export async function POST(request: Request) {
     return Response.json({ draftId: existing.id, ok: true });
   }
 
+  const photo = message.photo.at(-1);
+  if (!photo) return Response.json({ ok: true });
+  const simplePrice = imageCaptionPrice(message.caption);
+
+  if (simplePrice !== null) {
+    if (!databaseEnabled) {
+      await sendTelegramMessage(chatId, "AI urun onay akisi icin veritabani baglantisi gerekli.");
+      return Response.json({ ok: true });
+    }
+    await sendTelegramMessage(chatId, "🤖 Gorsel analiz ediliyor; kategori ve SEO taslagi hazirlaniyor...");
+    try {
+      const storedImage = await storeTelegramPhoto(photo.file_id, updateId);
+      if (!storedImage.imageUrl) throw new Error(storedImage.warning || "Kalici urun gorseli olusturulamadi.");
+      const ai = await analyzeNewProductImage(storedImage.imageUrl);
+      const draft = await insertDraft({
+        attributes: ai.attributes,
+        categoryId: ai.categoryId,
+        description: ai.description,
+        dimensionalWeight: ai.dimensionalWeight,
+        imageUrl: storedImage.imageUrl,
+        lastError: `AI kategori: ${ai.categoryName}`,
+        listPrice: simplePrice,
+        quantity: 1000,
+        salePrice: simplePrice,
+        status: "needs_review",
+        telegramChatId: telegramId(chatId),
+        telegramFileId: photo.file_id,
+        telegramUpdateId: updateId,
+        telegramUserId: userId,
+        title: ai.title,
+        vatRate: ai.vatRate,
+      });
+      const cleanDescription = ai.description.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      await sendTelegramMessage(
+        chatId,
+        [
+          "🤖 AI urun taslagi hazir",
+          `Urun: ${draft.title}`,
+          `Kategori: ${ai.categoryName} (${ai.categoryId})`,
+          `Fiyat: ${simplePrice.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL`,
+          `KDV: %${ai.vatRate}`,
+          `Zorunlu ozellik: ${ai.attributes.length}`,
+          `Aciklama: ${cleanDescription.slice(0, 900)}`,
+          "\nBilgileri kontrol edip onaylayin. Onay verilmeden Trendyol'a yuklenmez.",
+        ].join("\n"),
+        { inlineKeyboard: [[
+          { callbackData: `pa|${draft.id}`, text: "✅ Onayla ve Yukle" },
+          { callbackData: `px|${draft.id}`, text: "❌ Iptal" },
+        ]] },
+      );
+      return Response.json({ draftId: draft.id, mode: "ai-approval", ok: true });
+    } catch (error) {
+      await sendTelegramMessage(chatId, `AI urun taslagi hazirlanamadi: ${error instanceof Error ? error.message : "Bilinmeyen hata"}`);
+      return Response.json({ ok: true });
+    }
+  }
+
   const parsedCaption = parseProductCaption(message.caption);
 
   if (parsedCaption.issues.length > 0) {
@@ -405,12 +518,6 @@ export async function POST(request: Request) {
       chatId,
       `Taslak alınamadı:\n- ${parsedCaption.issues.join("\n- ")}\n\n${telegramCaptionTemplate}`,
     );
-    return Response.json({ ok: true });
-  }
-
-  const photo = message.photo.at(-1);
-
-  if (!photo) {
     return Response.json({ ok: true });
   }
 

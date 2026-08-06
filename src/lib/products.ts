@@ -83,6 +83,10 @@ export async function submitDraftToTrendyol(id: string) {
     throw new Error("Taslak bulunamadı.");
   }
 
+  if (draft.status === "cancelled") {
+    throw new Error("Iptal edilen taslak Trendyol'a gonderilemez.");
+  }
+
   const result = await submitDirectProductToTrendyol(draft);
 
   if (result.ok) {

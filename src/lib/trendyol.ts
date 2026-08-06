@@ -222,6 +222,23 @@ export async function getCategoryAttributes(categoryId: number) {
   return body;
 }
 
+export async function getCategoryTree(name?: string) {
+  const url = new URL(`${getBaseUrl()}/integration/product/product-categories`);
+  if (name?.trim()) url.searchParams.set("name", name.trim());
+  const response = await fetch(url, {
+    cache: "no-store",
+    headers: getHeaders(),
+  });
+  const body = await readResponse(response);
+  if (!response.ok) {
+    throw new TrendyolApiError(
+      `Trendyol kategori listesi istegi ${response.status} ile reddedildi.`,
+      body,
+    );
+  }
+  return body;
+}
+
 export async function getShipmentPackages(params: ShipmentPackageQuery = {}) {
   const config = getTrendyolConfig();
   const response = await fetch(

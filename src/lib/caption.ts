@@ -314,7 +314,13 @@ export function parseProductCaption(caption?: string): ParsedCaption {
   };
 }
 
-export const telegramCaptionTemplate = `Fotoğraf açıklamasını şu biçimde gönder:
+export const telegramCaptionTemplate = `AI ile yeni urun olusturmak icin fotograf gonderip aciklamasina yalnizca fiyati yaz:
+
+Fiyat: 499.90
+
+Bot gorseli analiz eder, Trendyol kategorisini ve zorunlu ozellikleri secer, SEO baslik/aciklama taslagini onayina gonderir. Onay vermeden urun yuklenmez.
+
+Manuel urun gondermek icin fotograf aciklamasini su bicimde gonder:
 
 Ürün: Figyfun örnek hayvan figür oyuncak
 Açıklama: Ürünün Trendyol açıklaması

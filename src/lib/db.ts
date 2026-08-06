@@ -9,6 +9,7 @@ export type ProductStatus =
   | "draft"
   | "needs_review"
   | "failed"
+  | "cancelled"
   | "submitted";
 
 export type ProductDraft = {
@@ -812,6 +813,19 @@ export async function markDraftReview(id: string, message: string) {
     UPDATE product_drafts
     SET status = 'needs_review', last_error = ${message}, updated_at = NOW()
     WHERE id = ${id}
+    RETURNING *
+  `;
+
+  return rows[0] ? mapProduct(rows[0]) : null;
+}
+
+export async function markDraftCancelled(id: string) {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql<ProductRow[]>`
+    UPDATE product_drafts
+    SET status = 'cancelled', last_error = 'Telegram kullanicisi taslagi iptal etti.', updated_at = NOW()
+    WHERE id = ${id} AND status <> 'submitted'
     RETURNING *
   `;
 

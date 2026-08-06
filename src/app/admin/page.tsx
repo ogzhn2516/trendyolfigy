@@ -130,6 +130,8 @@ function statusText(status: ProductDraft["status"]) {
       return "Hata";
     case "needs_review":
       return "Kontrol gerekli";
+    case "cancelled":
+      return "Iptal edildi";
     default:
       return "Taslak";
   }
@@ -143,6 +145,8 @@ function statusClass(status: ProductDraft["status"]) {
       return `${styles.status} ${styles.statusFailed}`;
     case "needs_review":
       return `${styles.status} ${styles.statusReview}`;
+    case "cancelled":
+      return `${styles.status} ${styles.statusFailed}`;
     default:
       return `${styles.status} ${styles.statusDraft}`;
   }
