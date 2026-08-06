@@ -18,17 +18,27 @@ function parseJson(value: string) {
   return JSON.parse(value.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim()) as ApiRecord;
 }
 
-async function gemini(parts: ApiRecord[]) {
+function isTimeoutError(error: unknown) {
+  return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError" || /timeout|aborted/i.test(error.message));
+}
+
+async function gemini(parts: ApiRecord[], timeoutMs = 10_000, stage = "AI islemi") {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) throw new Error("GEMINI_API_KEY gerekli.");
   const model = process.env.GEMINI_MODEL?.trim() || "gemini-3.6-flash";
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-    body: JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: "application/json", temperature: 0.15 } }),
-    cache: "no-store",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-    method: "POST",
-    signal: AbortSignal.timeout(15_000),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+      body: JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: "application/json", temperature: 0.15 } }),
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+      method: "POST",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    if (isTimeoutError(error)) throw new Error(`${stage} zaman asimina ugradi. Gemini yogun olabilir; albumu tekrar gondererek yeniden deneyin.`);
+    throw error;
+  }
   const body = await response.json().catch(() => null) as ApiRecord | null;
   if (!response.ok || !body) throw new Error(response.status === 429 ? "Gemini ucretsiz limiti doldu; daha sonra tekrar deneyin." : text(record(body?.error).message) || `Gemini ${response.status} hatasi.`);
   const candidates = Array.isArray(body.candidates) ? body.candidates : [];
@@ -61,8 +71,16 @@ function categoryAttributes(value: unknown) {
 }
 
 export async function analyzeNewProductImage(imageInput: string | string[], userNotes = "") {
-  const imageUrls = (Array.isArray(imageInput) ? imageInput : [imageInput]).slice(0, 8);
-  const imageResponses = await Promise.all(imageUrls.map((imageUrl) => fetch(imageUrl, { cache: "no-store", signal: AbortSignal.timeout(15_000) })));
+  // Albümün yalnızca ana (ilk) görseli AI'a gönderilir. Diğer görseller
+  // taslakta korunur ve onaydan sonra Trendyol'a yüklenir.
+  const imageUrls = (Array.isArray(imageInput) ? imageInput : [imageInput]).slice(0, 1);
+  let imageResponses: Response[];
+  try {
+    imageResponses = await Promise.all(imageUrls.map((imageUrl) => fetch(imageUrl, { cache: "no-store", signal: AbortSignal.timeout(8_000) })));
+  } catch (error) {
+    if (isTimeoutError(error)) throw new Error("Urun gorselleri zamaninda indirilemedi; albumu tekrar gonderin.");
+    throw error;
+  }
   if (!imageResponses.length || imageResponses.some((response) => !response.ok)) throw new Error("Urun gorselleri analiz icin alinamadi.");
   const imageParts = await Promise.all(imageResponses.map(async (response) => ({
     inlineData: {
@@ -73,7 +91,7 @@ export async function analyzeNewProductImage(imageInput: string | string[], user
   const vision = await gemini([
     { text: `Gorseldeki urunu analiz et. Turkce JSON dondur: title (Trendyol Akademi kurallarina uygun 9-13 kelime, en fazla 100 karakter), description (HTML etiketi olmadan 2-4 kisa paragraf ve dogal SEO), searchTerms (Trendyol kategori aramasi icin 3 kisa genel kategori terimi), vatRate (0,1,10 veya 20), dimensionalWeight (pozitif sayi). Marka, barkod, stok, emoji, abarti veya gorselde olmayan ozellik yazma. Saticinin ek notlari varsa dogru urun ozellikleri olarak kullan: ${userNotes.slice(0, 1000) || "yok"}` },
     ...imageParts,
-  ]);
+  ], 32_000, "Coklu gorsel analizi");
   const searchTerms = Array.isArray(vision.searchTerms) ? vision.searchTerms.map(text).filter(Boolean).slice(0, 3) : [];
   const title = text(vision.title).replace(/\s+/g, " ");
   const description = text(vision.description);
@@ -88,7 +106,7 @@ export async function analyzeNewProductImage(imageInput: string | string[], user
   if (!unique.length) throw new Error("Uygun Trendyol alt kategorisi bulunamadi.");
   const choice = await gemini([
     { text: `Urun: ${text(vision.title)}\nGorsel analizine gore asagidaki Trendyol yaprak kategorilerinden tam birini sec. Yalnizca JSON dondur: {\"categoryId\":123}. Adaylar:\n${unique.map((item) => `${item.id}: ${item.path}`).join("\n")}` },
-  ]);
+  ], 8_000, "Kategori secimi");
   const categoryId = Number(choice.categoryId);
   const category = unique.find((item) => item.id === categoryId);
   if (!category) throw new Error("AI gecerli Trendyol kategorisi secemedi.");
@@ -105,7 +123,7 @@ export async function analyzeNewProductImage(imageInput: string | string[], user
     }));
     const selected = await gemini([
       { text: `Urun gorseli ve basliga gore zorunlu Trendyol ozelliklerini sec. Yalnizca JSON dondur: {\"attributes\":[{\"attributeId\":1,\"attributeValueId\":2}]} Her zorunlu attribute icin verilen degerlerden birini sec; uydurma ID kullanma. Urun: ${text(vision.title)}\n${JSON.stringify(compact)}` },
-    ]);
+    ], 8_000, "Kategori ozellik secimi");
     const selections = Array.isArray(selected.attributes) ? selected.attributes.map(record) : [];
     attributes = selections.map((item) => ({ attributeId: Number(item.attributeId), attributeValueId: Number(item.attributeValueId) })).filter((item) => Number.isFinite(item.attributeId) && Number.isFinite(item.attributeValueId));
     const selectedIds = new Set(attributes.map((item) => item.attributeId));

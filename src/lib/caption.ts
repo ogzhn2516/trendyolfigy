@@ -320,7 +320,7 @@ Fiyat: 499.90
 
 Bot gorseli analiz eder, Trendyol kategorisini ve zorunlu ozellikleri secer, SEO baslik/aciklama taslagini onayina gonderir. Onay vermeden urun yuklenmez.
 
-Birden fazla fotograf icin fotograflari Telegram'da tek album olarak sec. Fiyati albumun ilk fotograf aciklamasina yaz. En fazla 8 gorsel birlikte analiz edilir ve Trendyol'a ayni sirayla yuklenir.
+Birden fazla fotograf icin fotograflari Telegram'da tek album olarak sec. Fiyati albumun ilk fotograf aciklamasina yaz. Ilk gorsel AI tarafindan analiz edilir; en fazla 8 album gorseli Trendyol'a ayni sirayla yuklenir.
 
 Manuel urun gondermek icin fotograf aciklamasini su bicimde gonder:
 

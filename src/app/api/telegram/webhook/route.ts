@@ -534,7 +534,7 @@ export async function POST(request: Request) {
         await sendTelegramMessage(chatId, "Album alindi fakat fiyat bulunamadi. Fotograflari yeniden album olarak gonderip ilk fotograf aciklamasina `Fiyat: 349.90` yazin.");
         return Response.json({ mode: "album-missing-price", ok: true });
       }
-      await sendTelegramMessage(chatId, `🤖 ${album.imageUrls.length} gorsel birlikte analiz ediliyor; kategori ve SEO taslagi hazirlaniyor...`);
+      await sendTelegramMessage(chatId, `🤖 Ana gorsel AI ile analiz ediliyor. Albumdeki ${album.imageUrls.length} gorselin tamami Trendyol taslaginda korunuyor...`);
       const draft = await createAiDraftAndNotify({
         chatId,
         fileIds: album.fileIds,
