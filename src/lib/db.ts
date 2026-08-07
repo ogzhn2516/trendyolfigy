@@ -779,7 +779,12 @@ export async function claimTelegramAlbum(mediaGroupId: string) {
     SET status = 'processing'
     WHERE media_group_id = ${mediaGroupId}
       AND status = 'collecting'
-      AND updated_at < NOW() - INTERVAL '1.5 seconds'
+      AND updated_at < NOW() - INTERVAL '4 seconds'
+      AND (
+        SELECT COUNT(*)
+        FROM telegram_product_album_photos photos
+        WHERE photos.media_group_id = telegram_product_albums.media_group_id
+      ) >= 2
     RETURNING *
   `;
   if (!albums[0]) return null;

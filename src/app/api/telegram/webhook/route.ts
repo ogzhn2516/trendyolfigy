@@ -545,7 +545,9 @@ export async function POST(request: Request) {
         updateId,
         userId,
       });
-      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      // Telegram bir albumdeki her fotografi ayri webhook olarak gonderir.
+      // Son fotograf Blob ve veritabanina yazilana kadar albumu acik tut.
+      await new Promise((resolve) => setTimeout(resolve, 5_000));
       const album = await claimTelegramAlbum(message.media_group_id);
       if (!album) return Response.json({ mode: "album-collecting", ok: true });
       if (album.price === null) {
