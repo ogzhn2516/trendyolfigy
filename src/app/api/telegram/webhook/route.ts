@@ -306,8 +306,10 @@ function imageCaptionPrice(caption?: string) {
   if (price === null) return null;
   const categoryLine = lines.find((line) => /^kategori\s*:/i.test(line));
   const category = categoryLine?.replace(/^kategori\s*:\s*/i, "").trim() || "";
-  const notes = lines.filter((line) => line !== categoryLine && line !== priceLine).join("\n");
-  return { category, notes, price };
+  const productLine = lines.find((line) => /^(?:urun|ürün)\s*:/i.test(line));
+  const productName = productLine?.replace(/^(?:urun|ürün)\s*:\s*/i, "").trim() || "";
+  const notes = lines.filter((line) => line !== categoryLine && line !== priceLine && line !== productLine).join("\n");
+  return { category, notes, price, productName };
 }
 
 async function createAiDraftAndNotify(input: {
@@ -316,6 +318,7 @@ async function createAiDraftAndNotify(input: {
   imageUrls: string[];
   notes: string;
   category: string;
+  productName: string;
   price: number;
   updateId: string;
   userId: string;
@@ -323,7 +326,10 @@ async function createAiDraftAndNotify(input: {
   if (!input.category.trim()) {
     throw new Error("Kategori gerekli. Aciklamaya yeni satirda `Kategori: alt kategori adi` yazin.");
   }
-  const ai = await analyzeNewProductImage(input.imageUrls, input.notes, input.category);
+  if (!input.productName.trim()) {
+    throw new Error("Urun adi gerekli. Aciklamaya yeni satirda `Urun: urunun mevcut adi` yazin.");
+  }
+  const ai = await analyzeNewProductImage(input.imageUrls, input.notes, input.category, input.productName);
   const draft = await insertDraft({
     attributes: ai.attributes,
     categoryId: ai.categoryId,
@@ -530,6 +536,7 @@ export async function POST(request: Request) {
       await addTelegramAlbumPhoto({
         chatId: telegramId(chatId),
         category: simpleProduct?.category ?? "",
+        productName: simpleProduct?.productName ?? "",
         fileId: photo.file_id,
         imageUrl: storedImage.imageUrl,
         mediaGroupId: message.media_group_id,
@@ -545,13 +552,14 @@ export async function POST(request: Request) {
         await sendTelegramMessage(chatId, "Album alindi fakat fiyat bulunamadi. Fotograflari yeniden album olarak gonderip ilk fotograf aciklamasina `Fiyat: 349.90` yazin.");
         return Response.json({ mode: "album-missing-price", ok: true });
       }
-      await sendTelegramMessage(chatId, `🤖 Ana gorsel AI ile analiz ediliyor. Albumdeki ${album.imageUrls.length} gorselin tamami Trendyol taslaginda korunuyor...`);
+      await sendTelegramMessage(chatId, `🤖 Yazdiginiz urun adi SEO icin optimize ediliyor. Albumdeki ${album.imageUrls.length} gorselin tamami Trendyol taslaginda korunuyor...`);
       const draft = await createAiDraftAndNotify({
         chatId,
         fileIds: album.fileIds,
         imageUrls: album.imageUrls,
         notes: album.notes,
         category: album.category,
+        productName: album.productName,
         price: album.price,
         updateId: album.updateId,
         userId: album.userId,
@@ -568,7 +576,7 @@ export async function POST(request: Request) {
       await sendTelegramMessage(chatId, "AI urun onay akisi icin veritabani baglantisi gerekli.");
       return Response.json({ ok: true });
     }
-    await sendTelegramMessage(chatId, "🤖 Gorsel analiz ediliyor; kategori ve SEO taslagi hazirlaniyor...");
+    await sendTelegramMessage(chatId, "🤖 Yazdiginiz urun adi SEO icin optimize ediliyor; aciklama hazirlaniyor...");
     try {
       const storedImage = await storeTelegramPhoto(photo.file_id, updateId);
       if (!storedImage.imageUrl) throw new Error(storedImage.warning || "Kalici urun gorseli olusturulamadi.");
@@ -578,6 +586,7 @@ export async function POST(request: Request) {
         imageUrls: [storedImage.imageUrl],
         notes: simpleProduct.notes,
         category: simpleProduct.category,
+        productName: simpleProduct.productName,
         price: simpleProduct.price,
         updateId,
         userId,

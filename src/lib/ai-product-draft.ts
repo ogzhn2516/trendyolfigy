@@ -162,12 +162,12 @@ function propertyHint(attributeName: string, properties: ApiRecord, fallback: st
   if (name.includes("parca")) return text(properties.pieceCount) || "1";
   if (name.includes("web color")) {
     const color = text(properties.webColor) || text(properties.color);
-    return /\bve\b|,|\//i.test(color) ? `${color} Cok Renkli` : color;
+    return /\bve\b|,|\//i.test(color) ? `${color} Cok Renkli` : color || "Cok Renkli";
   }
-  if (name.includes("renk")) return text(properties.color);
+  if (name.includes("renk")) return text(properties.color) || "Cok Renkli";
   if (name.includes("mensei")) return text(properties.origin) || "Turkiye";
   if (name === "beden" || name.includes("beden ")) return text(properties.size) || "Tek Ebat Standart";
-  if (name.includes("kumas tipi")) return text(properties.fabricType) || text(properties.material) || "Dokuma";
+  if (name.includes("kumas tipi")) return text(properties.fabricType) || text(properties.material) || "Diger Dokuma";
   if (name.includes("cinsiyet")) return text(properties.gender) || "Unisex";
   if (name.includes("kalip")) return text(properties.fit) || "Standart Regular";
   if (name.includes("yas grubu")) return text(properties.ageGroup) || "Yetiskin";
@@ -175,7 +175,7 @@ function propertyHint(attributeName: string, properties: ApiRecord, fallback: st
   if (name.includes("boyut") || name.includes("ebat") || name.includes("olcu")) return text(properties.size) || "Standart Tek Ebat";
   if (name.includes("materyal") || name.includes("malzeme")) {
     const material = text(properties.material);
-    return /pla|petg|abs/i.test(material) ? `${material} Plastik` : material;
+    return /pla|petg|abs/i.test(material) ? `${material} Plastik` : material || "Diger";
   }
   return fallback;
 }
@@ -196,26 +196,29 @@ function attributeValues(value: unknown) {
   })).filter((item) => Number.isFinite(item.id) && item.name);
 }
 
-export async function analyzeNewProductImage(imageInput: string | string[], userNotes = "", preferredCategory = "") {
+export async function analyzeNewProductImage(imageInput: string | string[], userNotes = "", preferredCategory = "", sourceProductName = "") {
   // Albümün yalnızca ana (ilk) görseli AI'a gönderilir. Diğer görseller
   // taslakta korunur ve onaydan sonra Trendyol'a yüklenir.
   const imageUrls = (Array.isArray(imageInput) ? imageInput : [imageInput]).slice(0, 1);
-  let imageResponses: Response[];
-  try {
-    imageResponses = await Promise.all(imageUrls.map((imageUrl) => fetch(imageUrl, { cache: "no-store", signal: AbortSignal.timeout(8_000) })));
-  } catch (error) {
-    if (isTimeoutError(error)) throw new Error("Urun gorselleri zamaninda indirilemedi; albumu tekrar gonderin.");
-    throw error;
+  let imageParts: ApiRecord[] = [];
+  if (!sourceProductName.trim()) {
+    let imageResponses: Response[];
+    try {
+      imageResponses = await Promise.all(imageUrls.map((imageUrl) => fetch(imageUrl, { cache: "no-store", signal: AbortSignal.timeout(8_000) })));
+    } catch (error) {
+      if (isTimeoutError(error)) throw new Error("Urun gorselleri zamaninda indirilemedi; albumu tekrar gonderin.");
+      throw error;
+    }
+    if (!imageResponses.length || imageResponses.some((response) => !response.ok)) throw new Error("Urun gorselleri analiz icin alinamadi.");
+    imageParts = await Promise.all(imageResponses.map(async (response) => ({
+      inlineData: {
+        data: Buffer.from(await response.arrayBuffer()).toString("base64"),
+        mimeType: response.headers.get("content-type") || "image/jpeg",
+      },
+    })));
   }
-  if (!imageResponses.length || imageResponses.some((response) => !response.ok)) throw new Error("Urun gorselleri analiz icin alinamadi.");
-  const imageParts = await Promise.all(imageResponses.map(async (response) => ({
-    inlineData: {
-      data: Buffer.from(await response.arrayBuffer()).toString("base64"),
-      mimeType: response.headers.get("content-type") || "image/jpeg",
-    },
-  })));
   const vision = await gemini([
-    { text: `Gorseldeki urunu analiz et. Turkce JSON dondur: title (Trendyol Akademi kurallarina uygun 9-13 kelime, en fazla 100 karakter), description (HTML etiketi olmadan 2-4 kisa paragraf ve dogal SEO), searchTerms (Trendyol kategori aramasi icin 3 kisa genel kategori terimi), vatRate (0,1,10 veya 20), dimensionalWeight (pozitif sayi), properties ({"pieceCount":"1","color":"...","webColor":"...","size":"...","material":"...","fabricType":"...","gender":"Unisex","fit":"Standart","ageGroup":"Yetiskin","height":"Standart","origin":"Turkiye"}). Marka, barkod, stok, emoji veya abarti yazma. Gorulebilen ozellikleri ve saticinin ek notlarini kullan: ${userNotes.slice(0, 1000) || "yok"}` },
+    { text: `${sourceProductName.trim() ? `Saticinin verdigi urun adini tek dogru kaynak kabul et: "${sourceProductName.slice(0, 300)}". Urun turunu degistirme ve gorselden urun kimligi tahmin etme.` : "Gorseldeki urunu analiz et."} Turkce JSON dondur: title (mevcut urun adini koruyarak Trendyol SEO uyumlu 9-13 kelime, en fazla 100 karakter), description (yalnizca kaynak urun adindaki gercek bilgilere dayanan, HTML etiketi olmadan 2-4 kisa paragraf ve dogal SEO), searchTerms (3 kisa kategori terimi), vatRate (0,1,10 veya 20), dimensionalWeight (pozitif sayi), properties ({"pieceCount":"1","color":"...","webColor":"...","size":"...","material":"...","fabricType":"...","gender":"Unisex","fit":"Standart","ageGroup":"Yetiskin","height":"Standart","origin":"Turkiye"}). Marka, barkod, stok, emoji, abarti veya kaynakta olmayan teknik ozellik yazma. Satici notlari: ${userNotes.slice(0, 1000) || "yok"}` },
     ...imageParts,
   ], 32_000, "Coklu gorsel analizi");
   const searchTerms = Array.isArray(vision.searchTerms) ? vision.searchTerms.map(text).filter(Boolean).slice(0, 3) : [];

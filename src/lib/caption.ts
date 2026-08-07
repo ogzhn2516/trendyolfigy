@@ -318,8 +318,9 @@ export const telegramCaptionTemplate = `AI ile yeni urun olusturmak icin fotogra
 
 Fiyat: 499.90
 Kategori: Biblo
+Urun: Dekoratif zürafa biblo 13 cm
 
-Bot yazdigin alt kategoriyi Trendyol'un guncel kategori agacinda bulur, gorselden zorunlu ozellikleri secer ve SEO baslik/aciklama taslagini onayina gonderir. Onay vermeden urun yuklenmez.
+Bot yazdigin alt kategoriyi Trendyol'un guncel kategori agacinda bulur; verdigin urun adini kaynak kabul ederek SEO baslik/aciklama taslagini hazirlar. Gorsel urun turunu tahmin etmek icin kullanilmaz. Onay vermeden urun yuklenmez.
 
 Birden fazla fotograf icin fotograflari Telegram'da tek album olarak sec. Fiyati albumun ilk fotograf aciklamasina yaz. Ilk gorsel AI tarafindan analiz edilir; en fazla 8 album gorseli Trendyol'a ayni sirayla yuklenir.
 
