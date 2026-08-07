@@ -113,7 +113,26 @@ function rankCategories(candidates: CategoryCandidate[], query: string) {
 }
 
 function normalizedValue(value: string) {
-  return value.toLocaleLowerCase("tr-TR").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, " ").trim();
+  return value.toLocaleLowerCase("tr-TR").replace(/ı/g, "i").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, " ").trim();
+}
+
+function categorySimilarity(category: CategoryCandidate, requested: string) {
+  const query = normalizedValue(requested);
+  const name = normalizedValue(category.name);
+  const path = normalizedValue(category.path);
+  if (name === query) return 100;
+  if (path === query) return 110;
+  const queryWords = query.split(/\s+/).filter(Boolean);
+  const nameWords = name.split(/\s+/).filter(Boolean);
+  const matched = queryWords.filter((queryWord) => nameWords.some((nameWord) => {
+    if (nameWord === queryWord || (Math.min(nameWord.length, queryWord.length) >= 4 && (nameWord.startsWith(queryWord) || queryWord.startsWith(nameWord)))) return true;
+    let commonPrefix = 0;
+    while (commonPrefix < Math.min(nameWord.length, queryWord.length) && nameWord[commonPrefix] === queryWord[commonPrefix]) commonPrefix += 1;
+    return commonPrefix >= 4 && commonPrefix / Math.min(nameWord.length, queryWord.length) >= 0.7;
+  })).length;
+  const coverage = queryWords.length ? matched / queryWords.length : 0;
+  const precision = nameWords.length ? matched / nameWords.length : 0;
+  return coverage * 70 + precision * 25 + (path.includes(query) ? 5 : 0);
 }
 
 async function allTrendyolCategories() {
@@ -126,21 +145,18 @@ async function allTrendyolCategories() {
   return fullCategoryTreePromise;
 }
 
-async function resolvePreferredCategory(categoryInput: string, productTitle: string) {
-  const categories = await allTrendyolCategories();
+async function resolvePreferredCategory(categoryInput: string) {
+  const searched = flattenCategories(await getCategoryTree(categoryInput));
+  const categories = [...new Map([...(searched || []), ...await allTrendyolCategories()].map((item) => [item.id, item])).values()];
   const requested = normalizedValue(categoryInput);
   const requestedId = Number(categoryInput.trim());
   const byId = Number.isFinite(requestedId) ? categories.find((item) => item.id === requestedId) : null;
   if (byId) return byId;
   const exact = categories.filter((item) => normalizedValue(item.name) === requested || normalizedValue(item.path) === requested);
-  if (exact.length) return rankCategories(exact, `${categoryInput} ${productTitle}`)[0];
-  const partial = categories.filter((item) => {
-    const name = normalizedValue(item.name);
-    const path = normalizedValue(item.path);
-    return name.includes(requested) || requested.includes(name) || path.includes(requested);
-  });
-  if (partial.length) return rankCategories(partial, `${categoryInput} ${productTitle}`)[0];
-  const suggestions = rankCategories(categories, `${categoryInput} ${productTitle}`).slice(0, 5).map((item) => item.path);
+  if (exact.length) return exact.sort((a, b) => a.path.length - b.path.length)[0];
+  const ranked = categories.map((item) => ({ item, score: categorySimilarity(item, categoryInput) })).sort((a, b) => b.score - a.score || a.item.path.length - b.item.path.length);
+  if (ranked[0]?.score >= 60) return ranked[0].item;
+  const suggestions = ranked.slice(0, 5).map(({ item }) => item.path);
   throw new Error(`Kategori bulunamadi: ${categoryInput}.${suggestions.length ? ` En yakin kategoriler: ${suggestions.join(" | ")}` : ""}`);
 }
 
@@ -231,7 +247,7 @@ export async function analyzeNewProductImage(imageInput: string | string[], user
 
   let category: CategoryCandidate | undefined;
   if (preferredCategory.trim()) {
-    category = await resolvePreferredCategory(preferredCategory, title);
+    category = await resolvePreferredCategory(preferredCategory);
   } else {
     const categoryResponses = await Promise.all(searchTerms.map((term) => getCategoryTree(term)));
     let candidates = categoryResponses.flatMap((response) => flattenCategories(response));
