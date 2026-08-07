@@ -4,7 +4,7 @@ import { getShipmentPackages } from "@/lib/trendyol";
 
 type ApiRecord = Record<string, unknown>;
 
-const excludedStatuses = new Set(["cancelled", "returned", "unsupplied", "un supplied"]);
+const excludedStatuses = new Set(["cancelled", "returned", "unsupplied", "un supplied", "unpacked", "repack"]);
 
 function record(value: unknown): ApiRecord {
   return value && typeof value === "object" ? value as ApiRecord : {};
@@ -81,7 +81,14 @@ async function todayOrders() {
 
 export async function buildTodaySalesReport() {
   const { orders, range } = await todayOrders();
-  const activeOrders = orders.filter((order) => !excludedStatuses.has(textValue(order.status || order.shipmentPackageStatus).toLowerCase()));
+  const uniqueOrders = new Map<string, ApiRecord>();
+  for (const order of orders) {
+    const rawPackageId = order.shipmentPackageId ?? order.id ?? order.packageId;
+    const packageId = typeof rawPackageId === "number" || typeof rawPackageId === "string" ? String(rawPackageId) : "";
+    const orderNumber = textValue(order.orderNumber);
+    uniqueOrders.set(packageId || `${orderNumber}-${numberValue(order.orderDate)}`, order);
+  }
+  const activeOrders = [...uniqueOrders.values()].filter((order) => !excludedStatuses.has(textValue(order.status || order.shipmentPackageStatus).toLowerCase()));
   const productRows: string[] = [];
   let revenue = 0;
   let commission = 0;
@@ -92,11 +99,19 @@ export async function buildTodaySalesReport() {
 
   for (const order of activeOrders) {
     const shippingInfo = shippingOf(order);
-    const lines = Array.isArray(order.lines) ? order.lines.map(record) : [];
+    const lines = (Array.isArray(order.lines) ? order.lines.map(record) : []).filter((line) => {
+      const status = textValue(line.orderLineItemStatusName || line.status).toLowerCase();
+      return !excludedStatuses.has(status);
+    });
+    const rawLineTotals = lines.map((line) => {
+      const count = Math.max(1, numberValue(line.quantity));
+      const unitPrice = numberValue(line.lineUnitPrice) || numberValue(line.price) || numberValue(line.amount) || numberValue(line.lineGrossAmount);
+      return unitPrice * count;
+    });
+    const rawPackageTotal = rawLineTotals.reduce((sum, value) => sum + value, 0);
+    const packageRevenue = numberValue(order.packageTotalPrice) || numberValue(order.totalPrice) || numberValue(order.totalDiscountedPrice) || rawPackageTotal;
     let packageShippingReported = false;
-    for (const line of lines) {
-      const lineStatus = textValue(line.orderLineItemStatusName || line.status).toLowerCase();
-      if (excludedStatuses.has(lineStatus)) continue;
+    for (const [lineIndex, line] of lines.entries()) {
       const lineShipping = packageShippingReported ? 0 : shippingInfo.fee;
       if (!packageShippingReported) {
         shipping += shippingInfo.fee;
@@ -104,8 +119,9 @@ export async function buildTodaySalesReport() {
       }
       packageShippingReported = true;
       const count = Math.max(1, numberValue(line.quantity));
-      const unitPrice = numberValue(line.lineUnitPrice) || numberValue(line.price) || numberValue(line.amount) || numberValue(line.lineGrossAmount);
-      const lineRevenue = unitPrice * count;
+      const lineRevenue = rawPackageTotal > 0
+        ? packageRevenue * (rawLineTotals[lineIndex] / rawPackageTotal)
+        : packageRevenue / Math.max(1, lines.length);
       const commissionRate = numberValue(line.commission ?? line.commissionRate);
       const lineCommission = lineRevenue * commissionRate / 100;
       revenue += lineRevenue;
