@@ -26,28 +26,47 @@ function isTimeoutError(error: unknown) {
 async function gemini(parts: ApiRecord[], timeoutMs = 10_000, stage = "AI islemi") {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) throw new Error("GEMINI_API_KEY gerekli.");
-  const model = process.env.GEMINI_MODEL?.trim() || "gemini-3.6-flash";
-  let response: Response;
-  try {
-    response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-      body: JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: "application/json", temperature: 0.15 } }),
-      cache: "no-store",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-      method: "POST",
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  } catch (error) {
-    if (isTimeoutError(error)) throw new Error(`${stage} zaman asimina ugradi. Gemini yogun olabilir; albumu tekrar gondererek yeniden deneyin.`);
-    throw error;
+  const configuredFallbacks = (process.env.GEMINI_FALLBACK_MODELS || "gemini-3.5-flash-lite,gemini-3.5-flash,gemini-3.1-flash-lite").split(",").map((item) => item.trim()).filter(Boolean);
+  const models = [...new Set([process.env.GEMINI_MODEL?.trim() || "gemini-3.6-flash", ...configuredFallbacks])];
+  let quotaOnly = true;
+  let lastMessage = "Gemini gecici olarak kullanilamiyor.";
+
+  for (const model of models) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      let response: Response;
+      try {
+        response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+          body: JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: "application/json" } }),
+          cache: "no-store",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+          method: "POST",
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+      } catch (error) {
+        if (isTimeoutError(error)) throw new Error(`${stage} zaman asimina ugradi. Albumu tekrar gondererek yeniden deneyin.`);
+        throw error;
+      }
+      const body = await response.json().catch(() => null) as ApiRecord | null;
+      if (response.ok && body) {
+        const candidates = Array.isArray(body.candidates) ? body.candidates : [];
+        const outputParts = record(record(candidates[0]).content).parts;
+        const first = Array.isArray(outputParts) ? record(outputParts[0]) : {};
+        const output = text(first.text);
+        if (!output) throw new Error("Gemini bos yanit verdi.");
+        return parseJson(output);
+      }
+      const message = text(record(body?.error).message) || `Gemini ${response.status} hatasi.`;
+      lastMessage = message;
+      quotaOnly = quotaOnly && response.status === 429;
+      const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+      if (!retryable && response.status !== 404) throw new Error(message);
+      if (attempt === 0 && retryable) {
+        await new Promise((resolve) => setTimeout(resolve, 500 + Math.floor(Math.random() * 350)));
+      }
+    }
   }
-  const body = await response.json().catch(() => null) as ApiRecord | null;
-  if (!response.ok || !body) throw new Error(response.status === 429 ? "Gemini ucretsiz limiti doldu; daha sonra tekrar deneyin." : text(record(body?.error).message) || `Gemini ${response.status} hatasi.`);
-  const candidates = Array.isArray(body.candidates) ? body.candidates : [];
-  const outputParts = record(record(candidates[0]).content).parts;
-  const first = Array.isArray(outputParts) ? record(outputParts[0]) : {};
-  const output = text(first.text);
-  if (!output) throw new Error("Gemini bos yanit verdi.");
-  return parseJson(output);
+  if (quotaOnly) throw new Error("Tum Gemini ucretsiz model limitleri doldu; limit yenilendiginde albumu tekrar gonderin.");
+  throw new Error(`Gemini modelleri gecici olarak yogun: ${lastMessage}`);
 }
 
 function flattenCategories(value: unknown, parents: string[] = []): CategoryCandidate[] {
