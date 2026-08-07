@@ -30,6 +30,7 @@ import {
   updateSingleProductPrice,
 } from "@/lib/trendyol-commerce-intelligence";
 import { applySeoUpdates, sendSeoReport } from "@/lib/trendyol-seo";
+import { checkPendingProducts, checkProductDraft } from "@/lib/product-tracker";
 
 export const maxDuration = 60;
 export const runtime = "nodejs";
@@ -270,7 +271,7 @@ async function handleProductApprovalButton(update: TelegramUpdate) {
     await answerTelegramCallbackQuery(callback.id, "Taslak bulunamadi veya size ait degil.");
     return true;
   }
-  if (draft.status === "submitted") {
+  if (draft.status === "submitted" || draft.status === "approved") {
     await answerTelegramCallbackQuery(callback.id, "Bu urun daha once Trendyol'a gonderildi.");
     return true;
   }
@@ -287,12 +288,20 @@ async function handleProductApprovalButton(update: TelegramUpdate) {
   await answerTelegramCallbackQuery(callback.id, "Urun Trendyol'a gonderiliyor...");
   try {
     const result = await submitDraftToTrendyol(draft.id);
-    await sendTelegramMessage(
-      chatId,
-      result?.status === "submitted"
-        ? `✅ Onaylanan urun Trendyol kuyruguna gonderildi.\nUrun: ${draft.title}\nBatch ID: ${result.batchRequestId ?? "bekleniyor"}`
-        : `Urun gonderilemedi: ${result?.lastError ?? "Trendyol kontrolu gerekli."}`,
-    );
+    if (result?.status === "submitted") {
+      await sendTelegramMessage(chatId, `⏳ Urun Trendyol'da isleniyor.\nUrun: ${draft.title}\nBatch ID: ${result.batchRequestId ?? "bekleniyor"}`, {
+        inlineKeyboard: [[{ callbackData: `pt|${draft.id}`, text: "🔄 Durumu Kontrol Et" }]],
+      });
+      await new Promise((resolve) => setTimeout(resolve, 3500));
+      try {
+        const submittedDraft = await getDraftById(draft.id);
+        if (submittedDraft?.status === "submitted") await checkProductDraft(submittedDraft, true);
+      } catch {
+        // Kuyruk sonucu gecikirse kullanici butonla veya /urun_durum ile tekrar kontrol eder.
+      }
+    } else {
+      await sendTelegramMessage(chatId, `Urun gonderilemedi: ${result?.lastError ?? "Trendyol kontrolu gerekli."}`);
+    }
   } catch (error) {
     await sendTelegramMessage(chatId, `Urun gonderilemedi: ${error instanceof Error ? error.message : "Bilinmeyen hata"}`);
   }
@@ -316,6 +325,37 @@ async function handleProductCategoryButton(update: TelegramUpdate) {
   await saveTelegramSelectedCategory(chatId, { categoryId: category.id, name: category.name, path: category.path });
   await answerTelegramCallbackQuery(callback.id, "Aktif kategori secildi.");
   await sendTelegramMessage(chatId, `✅ Aktif kategori ayarlandi\n${category.path}\nKategori ID: ${category.id}\n\nBundan sonraki urunlerde sadece Urun ve Fiyat yazmaniz yeterli.`);
+  return true;
+}
+
+async function handleProductTrackingButton(update: TelegramUpdate) {
+  const callback = update.callback_query;
+  if (!callback?.data?.startsWith("pt|") || !callback.message) return false;
+  const chatId = callback.message.chat.id;
+  if (!getAllowedTelegramUserIds().has(telegramId(callback.from.id))) {
+    await answerTelegramCallbackQuery(callback.id, "Bu islem icin yetkiniz yok.");
+    return true;
+  }
+  const draft = await getDraftById(callback.data.split("|")[1] || "");
+  if (!draft || draft.telegramChatId !== telegramId(chatId)) {
+    await answerTelegramCallbackQuery(callback.id, "Urun takibi bulunamadi.");
+    return true;
+  }
+  if (draft.status === "approved") {
+    await answerTelegramCallbackQuery(callback.id, "Bu urun Trendyol tarafindan onaylandi.");
+    await sendTelegramMessage(chatId, `✅ Trendyol urunu onayladi\nUrun: ${draft.title}\nBarkod: ${draft.barcode}`);
+    return true;
+  }
+  if (draft.status === "needs_review") {
+    await answerTelegramCallbackQuery(callback.id, "Urun reddedildi; duzeltip yeniden gonderebilirsiniz.");
+    await sendTelegramMessage(chatId, `❌ Trendyol urunu reddetti\nUrun: ${draft.title}\nNeden: ${draft.lastError ?? "Urun bilgileri yeniden kontrol edilmeli."}`, {
+      inlineKeyboard: [[{ callbackData: `pa|${draft.id}`, text: "🛠 Duzeltip Tekrar Gonder" }]],
+    });
+    return true;
+  }
+  await answerTelegramCallbackQuery(callback.id, "Trendyol durumu kontrol ediliyor...");
+  try { await checkProductDraft(draft, true); }
+  catch (error) { await sendTelegramMessage(chatId, `Urun durumu alinamadi: ${error instanceof Error ? error.message : "Bilinmeyen hata"}`); }
   return true;
 }
 
@@ -490,6 +530,10 @@ export async function POST(request: Request) {
     return Response.json({ ok: true });
   }
 
+  if (await handleProductTrackingButton(update)) {
+    return Response.json({ ok: true });
+  }
+
   if (await handleProductApprovalButton(update)) {
     return Response.json({ ok: true });
   }
@@ -520,6 +564,17 @@ export async function POST(request: Request) {
       await sendTelegramMessage(chatId, selected
         ? `Aktif kategori:\n${selected.path}\nKategori ID: ${selected.categoryId}\n\nDegistirmek icin /ev, /figur veya /kategori arama yazin.`
         : "Aktif kategori secilmedi. /ev, /figur veya /kategori fotograf cercevesi yazarak arayin.");
+      return Response.json({ ok: true });
+    }
+
+    if (["/urun_durum", "urun durum", "ürün durum", "/urun_durumu"].includes(command || "")) {
+      await sendTelegramMessage(chatId, "Gönderilen ürünlerin Trendyol durumu kontrol ediliyor...");
+      try {
+        const result = await checkPendingProducts(chatId);
+        if (!result.checked) await sendTelegramMessage(chatId, "Takip bekleyen ürün bulunamadı.");
+      } catch (error) {
+        await sendTelegramMessage(chatId, `Ürün takibi tamamlanamadı: ${error instanceof Error ? error.message : "Bilinmeyen hata"}`);
+      }
       return Response.json({ ok: true });
     }
 

@@ -235,6 +235,17 @@ export async function getCategoryAttributeValues(categoryId: number, attributeId
   return body;
 }
 
+export async function getBatchRequestResult(batchRequestId: string) {
+  const config = getTrendyolConfig();
+  const response = await fetch(`${getBaseUrl()}/integration/product/sellers/${config.TRENDYOL_SELLER_ID}/products/batch-requests/${encodeURIComponent(batchRequestId)}`, {
+    cache: "no-store",
+    headers: getHeaders(),
+  });
+  const body = await readResponse(response);
+  if (!response.ok) throw new TrendyolApiError(`Toplu islem kontrolu ${response.status} ile reddedildi.`, body);
+  return body;
+}
+
 export async function getCategoryTree(name?: string) {
   const url = new URL(`${getBaseUrl()}/integration/product/product-categories`);
   if (name?.trim()) url.searchParams.set("name", name.trim());

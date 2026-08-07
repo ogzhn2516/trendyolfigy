@@ -126,6 +126,8 @@ function statusText(status: ProductDraft["status"]) {
   switch (status) {
     case "submitted":
       return "Gönderildi";
+    case "approved":
+      return "Onaylandı";
     case "failed":
       return "Hata";
     case "needs_review":
@@ -140,6 +142,8 @@ function statusText(status: ProductDraft["status"]) {
 function statusClass(status: ProductDraft["status"]) {
   switch (status) {
     case "submitted":
+      return `${styles.status} ${styles.statusSubmitted}`;
+    case "approved":
       return `${styles.status} ${styles.statusSubmitted}`;
     case "failed":
       return `${styles.status} ${styles.statusFailed}`;

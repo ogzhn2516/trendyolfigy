@@ -10,6 +10,7 @@ export type ProductStatus =
   | "needs_review"
   | "failed"
   | "cancelled"
+  | "approved"
   | "submitted";
 
 export type ProductDraft = {
@@ -929,6 +930,29 @@ export async function getDraftById(id: string) {
     LIMIT 1
   `;
 
+  return rows[0] ? mapProduct(rows[0]) : null;
+}
+
+export async function listSubmittedDrafts() {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql<ProductRow[]>`
+    SELECT * FROM product_drafts
+    WHERE status = 'submitted' AND batch_request_id IS NOT NULL
+    ORDER BY submitted_at DESC
+    LIMIT 100
+  `;
+  return rows.map(mapProduct);
+}
+
+export async function markDraftApproved(id: string, response: unknown) {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql<ProductRow[]>`
+    UPDATE product_drafts SET status = 'approved', last_error = NULL,
+      trendyol_response = ${sql.json(toJsonValue(response))}, updated_at = NOW()
+    WHERE id = ${id} RETURNING *
+  `;
   return rows[0] ? mapProduct(rows[0]) : null;
 }
 
