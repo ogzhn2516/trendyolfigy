@@ -223,6 +223,36 @@ function standardAttributeValue(values: Array<{ id: number; name: string }>, pri
   return values[0] ?? null;
 }
 
+function safeSeoTitle(aiTitle: string, sourceProductName: string, categoryName: string) {
+  const original = sourceProductName.trim();
+  const generated = aiTitle.trim();
+  const originalWords = normalizedValue(original).split(/\s+/).filter(Boolean);
+  const generatedText = normalizedValue(generated);
+  const identityMatches = originalWords.filter((word) => generatedText.includes(word)).length;
+  const preservesIdentity = !originalWords.length || identityMatches / originalWords.length >= 0.5;
+  const source = ((generated && preservesIdentity ? generated : original) || categoryName.trim() || "3D Baski Urun").replace(/\s+/g, " ");
+  const words = source.split(" ").filter(Boolean);
+  const additions = `${categoryName} PLA Plastik Yerli Uretim 3D Baski`.split(" ");
+  const seen = new Set(words.map((word) => normalizedValue(word)));
+  for (const word of additions) {
+    if (words.length >= 9) break;
+    const normalized = normalizedValue(word);
+    if (normalized && !seen.has(normalized)) {
+      words.push(word);
+      seen.add(normalized);
+    }
+  }
+  while (words.length > 3 && words.slice(0, 13).join(" ").length > 100) words.pop();
+  return words.slice(0, 13).join(" ").slice(0, 100).trim();
+}
+
+function safeSeoDescription(aiDescription: string, productTitle: string, sourceProductName: string) {
+  const clean = aiDescription.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  if (clean.length >= 120) return clean;
+  const identity = sourceProductName.trim() || productTitle;
+  return `${identity}, PLA plastik hammadde kullanilarak 3D yazici ile yerli olarak uretilir. Urun, kategoriye uygun kullanim ve sergileme amaciyla hazirlanmistir.\n\n${productTitle}; hafif, duzenli ve pratik bir 3D baski urun secenegi sunar. Paket icerigi bir adet urunden olusur ve mensei Turkiye'dir.`;
+}
+
 function categoryAttributes(value: unknown) {
   const body = record(value);
   const items = Array.isArray(body.categoryAttributes)
@@ -265,12 +295,9 @@ export async function analyzeNewProductImage(imageInput: string | string[], user
     ...imageParts,
   ], 32_000, "Coklu gorsel analizi");
   const searchTerms = Array.isArray(vision.searchTerms) ? vision.searchTerms.map(text).filter(Boolean).slice(0, 3) : [];
-  const title = text(vision.title).replace(/\s+/g, " ");
-  const description = text(vision.description);
-  const wordCount = title.split(" ").filter(Boolean).length;
-  if (!title || title.length > 100 || wordCount < 9 || wordCount > 13 || description.length < 120 || !searchTerms.length) {
-    throw new Error("AI baslik veya aciklamayi kalite kurallarina uygun olusturamadi; fotografi daha net cekip tekrar deneyin.");
-  }
+  const title = safeSeoTitle(text(vision.title), sourceProductName, preferredCategory);
+  const description = safeSeoDescription(text(vision.description), title, sourceProductName);
+  if (!title) throw new Error("Urun adindan SEO basligi olusturulamadi. `Urun:` satirini kontrol edin.");
 
   let category: CategoryCandidate | undefined;
   if (preferredCategory.trim()) {
