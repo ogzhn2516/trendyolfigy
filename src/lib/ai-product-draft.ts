@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { TrendyolAttributeInput } from "@/lib/caption";
-import { getCategoryAttributes, getCategoryTree } from "@/lib/trendyol";
+import { getCategoryAttributes, getCategoryAttributeValues, getCategoryTree } from "@/lib/trendyol";
 
 type ApiRecord = Record<string, unknown>;
 type CategoryCandidate = { id: number; name: string; path: string };
@@ -169,6 +169,14 @@ function categoryAttributes(value: unknown) {
   return items.map(record);
 }
 
+function attributeValues(value: unknown) {
+  const content = record(value).content;
+  return (Array.isArray(content) ? content : []).map((raw) => ({
+    id: Number(record(raw).attributeValueId),
+    name: text(record(raw).attributeValue),
+  })).filter((item) => Number.isFinite(item.id) && item.name);
+}
+
 export async function analyzeNewProductImage(imageInput: string | string[], userNotes = "", preferredCategory = "") {
   // Albümün yalnızca ana (ilk) görseli AI'a gönderilir. Diğer görseller
   // taslakta korunur ve onaydan sonra Trendyol'a yüklenir.
@@ -217,14 +225,18 @@ export async function analyzeNewProductImage(imageInput: string | string[], user
   if (!category) throw new Error("Gecerli Trendyol alt kategorisi secilemedi.");
 
   const attributesResponse = await getCategoryAttributes(category.id);
-  const required = categoryAttributes(attributesResponse).filter((item) => item.required === true);
+  const required = categoryAttributes(attributesResponse).filter((item) => item.required === true && !normalizedValue(text(record(item.attribute).name)).includes("mensei"));
   let attributes: TrendyolAttributeInput[] = [];
   if (required.length) {
-    const compact = required.map((item) => ({
-      attributeId: Number(record(item.attribute).id || item.attributeId),
-      name: text(record(item.attribute).name) || text(item.attributeName),
-      allowCustom: item.allowCustom === true,
-      values: (Array.isArray(item.attributeValues) ? item.attributeValues : []).map((raw) => ({ id: Number(record(raw).id || record(raw).attributeValueId), name: text(record(raw).name) || text(record(raw).attributeValue) })),
+    const compact = await Promise.all(required.map(async (item) => {
+      const attributeId = Number(record(item.attribute).id || item.attributeId);
+      const allowCustom = item.allowCustom === true;
+      return {
+        attributeId,
+        name: text(record(item.attribute).name) || text(item.attributeName),
+        allowCustom,
+        values: allowCustom ? [] : attributeValues(await getCategoryAttributeValues(category.id, attributeId)),
+      };
     }));
     const promptAttributes = compact.map((item) => ({ ...item, values: item.values.slice(0, 40) }));
     const selected = await gemini([
@@ -232,6 +244,11 @@ export async function analyzeNewProductImage(imageInput: string | string[], user
     ], 25_000, "Kategori ozellik secimi");
     const selections = Array.isArray(selected.attributes) ? selected.attributes.map(record) : [];
     attributes = selections.map((item) => ({ attributeId: Number(item.attributeId), attributeValueId: Number(item.attributeValueId) })).filter((item) => Number.isFinite(item.attributeId) && Number.isFinite(item.attributeValueId));
+    for (const pieceAttribute of compact.filter((item) => normalizedValue(item.name).includes("parca sayisi"))) {
+      attributes = attributes.filter((item) => item.attributeId !== pieceAttribute.attributeId);
+      const singlePiece = bestAttributeValue(pieceAttribute.values, "1 Tek Parca");
+      if (singlePiece) attributes.push({ attributeId: pieceAttribute.attributeId, attributeValueId: singlePiece.id });
+    }
     const properties = record(vision.properties);
     const alreadySelected = new Set(attributes.map((item) => item.attributeId));
     for (const item of compact.filter((entry) => !alreadySelected.has(entry.attributeId))) {

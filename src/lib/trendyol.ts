@@ -146,6 +146,7 @@ export function buildTrendyolPayload(draft: ProductDraft) {
     dimensionalWeight: draft.dimensionalWeight,
     images: (draft.imageUrls.length ? draft.imageUrls : [draft.imageUrl]).slice(0, 8).map((url) => ({ url })),
     listPrice: draft.listPrice,
+    origin: "TR",
     productMainId: draft.productMainId,
     quantity: draft.quantity,
     salePrice: draft.salePrice,
@@ -219,6 +220,18 @@ export async function getCategoryAttributes(categoryId: number) {
     );
   }
 
+  return body;
+}
+
+export async function getCategoryAttributeValues(categoryId: number, attributeId: number) {
+  const url = new URL(`${getBaseUrl()}/integration/product/categories/${categoryId}/attributes/${attributeId}/values`);
+  url.searchParams.set("page", "0");
+  url.searchParams.set("size", "1000");
+  const response = await fetch(url, { cache: "no-store", headers: getHeaders() });
+  const body = await readResponse(response);
+  if (!response.ok) {
+    throw new TrendyolApiError(`Kategori ozellik deger istegi ${response.status} ile reddedildi.`, body);
+  }
   return body;
 }
 
