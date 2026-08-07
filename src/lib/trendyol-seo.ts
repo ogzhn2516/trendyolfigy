@@ -513,12 +513,24 @@ export async function applySeoUpdates(contentId?: number, chatId?: number | stri
   };
 }
 
-export async function processSeoAiQueue() {
+export async function queueAllLowSeoProducts(chatId: number | string) {
+  const products = await scanLowSeoProducts();
+  const queue = await getSeoAiQueue();
+  const existing = new Set(queue.map((item) => `${item.chatId}|${item.contentId}`));
+  const createdAt = new Date().toISOString();
+  const additions = products
+    .filter((product) => !existing.has(`${String(chatId)}|${product.contentId}`))
+    .map((product) => ({ chatId: String(chatId), contentId: product.contentId, createdAt }));
+  await saveSeoAiQueue([...queue, ...additions]);
+  return { added: additions.length, low: products.length, queued: queue.length + additions.length };
+}
+
+export async function processSeoAiQueue(limit = 5) {
   const queue = await getSeoAiQueue();
   const remaining: typeof queue = [];
   let completed = 0;
   let processed = 0;
-  for (const [index, item] of queue.slice(0, 5).entries()) {
+  for (const [index, item] of queue.slice(0, limit).entries()) {
     const result = await applySeoUpdates(item.contentId);
     if (result.method === "ai") {
       completed += 1;
@@ -554,6 +566,7 @@ export async function sendSeoReport(chatId: number | string) {
       "BuyBox rekabeti olan urunler haric tutuldu; yalnizca size ait tek saticili urunler listelenir.",
       "Asagidaki butonla tum onerileri Trendyol onay surecine gonderebilirsiniz.",
     ].join("\n"),
+    { inlineKeyboard: [[{ callbackData: "seoall", text: `🤖 Tüm ${lowProducts.length} Ürünü AI ile SEO Düzelt` }]] },
   );
 
   for (const [index, product] of lowProducts.slice(0, 25).entries()) {

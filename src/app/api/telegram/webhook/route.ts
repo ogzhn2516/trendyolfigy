@@ -29,7 +29,7 @@ import {
   sendManualBuyboxReport,
   updateSingleProductPrice,
 } from "@/lib/trendyol-commerce-intelligence";
-import { applySeoUpdates, sendSeoReport } from "@/lib/trendyol-seo";
+import { applySeoUpdates, processSeoAiQueue, queueAllLowSeoProducts, sendSeoReport } from "@/lib/trendyol-seo";
 import { checkPendingProducts, checkProductDraft } from "@/lib/product-tracker";
 import { buildTodaySalesReport } from "@/lib/sales-report";
 
@@ -204,7 +204,21 @@ async function handleSeoButton(update: TelegramUpdate) {
   await answerTelegramCallbackQuery(callback.id, "SEO guncellemesi hazirlaniyor...");
   try {
     if (!contentId) {
-      await sendTelegramMessage(chatId, "AI SEO islemleri urun gorselleri tek tek analiz edilerek yapilir. Yeni `seo` listesindeki urun butonlarini kullanin.");
+      await sendTelegramMessage(chatId, "Düşük puanlı ürünlerin tamamı AI SEO kuyruğuna hazırlanıyor...");
+      const queued = await queueAllLowSeoProducts(chatId);
+      if (!queued.low) {
+        await sendTelegramMessage(chatId, "Güncellenecek düşük puanlı ürün bulunamadı.");
+        return true;
+      }
+      await sendTelegramMessage(chatId, [
+        `🤖 Toplu AI SEO işlemi başlatıldı.`,
+        `Düşük puanlı ürün: ${queued.low}`,
+        `Yeni kuyruğa eklenen: ${queued.added}`,
+        "İlk ürün şimdi işlenecek; kalanlar ücretsiz AI kotası doğrultusunda otomatik devam edecek.",
+        "Her tamamlanan ürün ayrıca bildirilecek.",
+      ].join("\n"));
+      const processed = await processSeoAiQueue(1);
+      await sendTelegramMessage(chatId, `Toplu SEO durumu: ${processed.completed} ürün tamamlandı, ${processed.remaining} ürün sırada.`);
       return true;
     }
     const result = await applySeoUpdates(contentId, chatId);
