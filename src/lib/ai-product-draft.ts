@@ -6,6 +6,7 @@ import { getCategoryAttributes, getCategoryAttributeValues, getCategoryTree } fr
 type ApiRecord = Record<string, unknown>;
 type CategoryCandidate = { id: number; name: string; path: string };
 let fullCategoryTreePromise: Promise<CategoryCandidate[]> | null = null;
+const manufacturingProfile = "PLA plastik, 3D yazici ile 3D baski, yerli uretim, mensei Turkiye, tek parca";
 
 function record(value: unknown): ApiRecord {
   return value && typeof value === "object" ? value as ApiRecord : {};
@@ -182,6 +183,9 @@ function propertyHint(attributeName: string, properties: ApiRecord, fallback: st
   }
   if (name.includes("renk")) return text(properties.color) || "Cok Renkli";
   if (name.includes("mensei")) return text(properties.origin) || "Turkiye";
+  if (name.includes("hammadde")) return "PLA Plastik";
+  if (name.includes("uretim yeri") || name.includes("uretim ulkesi")) return "Turkiye Yerli";
+  if (name.includes("uretim") || name.includes("teknik")) return "3D Baski 3D Yazici Yerli Uretim";
   if (name === "beden" || name.includes("beden ")) return text(properties.size) || "Tek Ebat Standart";
   if (name.includes("kumas tipi")) return text(properties.fabricType) || text(properties.material) || "Diger Dokuma";
   if (name.includes("cinsiyet")) return text(properties.gender) || "Unisex";
@@ -191,9 +195,32 @@ function propertyHint(attributeName: string, properties: ApiRecord, fallback: st
   if (name.includes("boyut") || name.includes("ebat") || name.includes("olcu")) return text(properties.size) || "Standart Tek Ebat";
   if (name.includes("materyal") || name.includes("malzeme")) {
     const material = text(properties.material);
-    return /pla|petg|abs/i.test(material) ? `${material} Plastik` : material || "Diger";
+    return /pla|petg|abs/i.test(material) ? `${material} Plastik` : material ? `${material} PLA Plastik` : "PLA Plastik";
   }
   return fallback;
+}
+
+function standardAttributeValue(values: Array<{ id: number; name: string }>, primaryHint: string) {
+  const standards = [
+    primaryHint,
+    manufacturingProfile,
+    "PLA Plastik",
+    "3D Baski 3D Yazici",
+    "Turkiye Yerli Uretim",
+    "1 Tek Parca",
+    "Cok Renkli",
+    "Standart",
+    "Tek Ebat",
+    "Unisex",
+    "Yetiskin",
+    "Diger",
+    "Yok",
+  ];
+  for (const standard of standards) {
+    const matched = bestAttributeValue(values, standard);
+    if (matched) return matched;
+  }
+  return values[0] ?? null;
 }
 
 function categoryAttributes(value: unknown) {
@@ -234,7 +261,7 @@ export async function analyzeNewProductImage(imageInput: string | string[], user
     })));
   }
   const vision = await gemini([
-    { text: `${sourceProductName.trim() ? `Saticinin verdigi urun adini tek dogru kaynak kabul et: "${sourceProductName.slice(0, 300)}". Urun turunu degistirme ve gorselden urun kimligi tahmin etme.` : "Gorseldeki urunu analiz et."} Turkce JSON dondur: title (mevcut urun adini koruyarak Trendyol SEO uyumlu 9-13 kelime, en fazla 100 karakter), description (yalnizca kaynak urun adindaki gercek bilgilere dayanan, HTML etiketi olmadan 2-4 kisa paragraf ve dogal SEO), searchTerms (3 kisa kategori terimi), vatRate (0,1,10 veya 20), dimensionalWeight (pozitif sayi), properties ({"pieceCount":"1","color":"...","webColor":"...","size":"...","material":"...","fabricType":"...","gender":"Unisex","fit":"Standart","ageGroup":"Yetiskin","height":"Standart","origin":"Turkiye"}). Marka, barkod, stok, emoji, abarti veya kaynakta olmayan teknik ozellik yazma. Satici notlari: ${userNotes.slice(0, 1000) || "yok"}` },
+    { text: `${sourceProductName.trim() ? `Saticinin verdigi urun adini tek dogru kaynak kabul et: "${sourceProductName.slice(0, 300)}". Urun turunu degistirme ve gorselden urun kimligi tahmin etme.` : "Gorseldeki urunu analiz et."} Tum urunler icin dogru uretim profili: ${manufacturingProfile}. Turkce JSON dondur: title (mevcut urun adini koruyarak Trendyol SEO uyumlu 9-13 kelime, en fazla 100 karakter), description (kaynak urun adi ve uretim profiline dayanan, HTML etiketi olmadan 2-4 kisa paragraf ve dogal SEO), searchTerms (3 kisa kategori terimi), vatRate (0,1,10 veya 20), dimensionalWeight (pozitif sayi), properties ({"pieceCount":"1","color":"...","webColor":"...","size":"...","material":"PLA Plastik","fabricType":"...","gender":"Unisex","fit":"Standart","ageGroup":"Yetiskin","height":"Standart","origin":"Turkiye"}). Marka, barkod, stok, emoji veya abarti yazma. Satici notlari: ${userNotes.slice(0, 1000) || "yok"}` },
     ...imageParts,
   ], 32_000, "Coklu gorsel analizi");
   const searchTerms = Array.isArray(vision.searchTerms) ? vision.searchTerms.map(text).filter(Boolean).slice(0, 3) : [];
@@ -276,12 +303,7 @@ export async function analyzeNewProductImage(imageInput: string | string[], user
         values: allowCustom ? [] : attributeValues(await getCategoryAttributeValues(category.id, attributeId)),
       };
     }));
-    const promptAttributes = compact.map((item) => ({ ...item, values: item.values.slice(0, 40) }));
-    const selected = await gemini([
-      { text: `Urun gorseli ve basliga gore zorunlu Trendyol ozelliklerini sec. Yalnizca JSON dondur: {\"attributes\":[{\"attributeId\":1,\"attributeValueId\":2}]} Her zorunlu attribute icin verilen degerlerden birini sec; uydurma ID kullanma. Urun: ${text(vision.title)}\n${JSON.stringify(promptAttributes)}` },
-    ], 25_000, "Kategori ozellik secimi");
-    const selections = Array.isArray(selected.attributes) ? selected.attributes.map(record) : [];
-    attributes = selections.map((item) => ({ attributeId: Number(item.attributeId), attributeValueId: Number(item.attributeValueId) })).filter((item) => Number.isFinite(item.attributeId) && Number.isFinite(item.attributeValueId));
+    attributes = [];
     for (const pieceAttribute of compact.filter((item) => normalizedValue(item.name).includes("parca sayisi"))) {
       attributes = attributes.filter((item) => item.attributeId !== pieceAttribute.attributeId);
       const singlePiece = bestAttributeValue(pieceAttribute.values, "1 Tek Parca");
@@ -291,16 +313,16 @@ export async function analyzeNewProductImage(imageInput: string | string[], user
     const alreadySelected = new Set(attributes.map((item) => item.attributeId));
     for (const item of compact.filter((entry) => !alreadySelected.has(entry.attributeId))) {
       const hint = propertyHint(item.name, properties, `${userNotes} ${title} ${description}`);
-      const matched = bestAttributeValue(item.values, hint);
+      const matched = standardAttributeValue(item.values, hint);
       if (matched) {
         attributes.push({ attributeId: item.attributeId, attributeValueId: matched.id });
-      } else if (item.allowCustom && hint.trim()) {
-        attributes.push({ attributeId: item.attributeId, customAttributeValue: hint.trim().slice(0, 100) });
+      } else if (item.allowCustom) {
+        attributes.push({ attributeId: item.attributeId, customAttributeValue: (hint.trim() || manufacturingProfile).slice(0, 100) });
       }
     }
     const selectedIds = new Set(attributes.map((item) => item.attributeId));
     const missing = compact.filter((item) => !selectedIds.has(item.attributeId)).map((item) => item.name).filter(Boolean);
-    if (missing.length) throw new Error(`Fotograftan belirlenemeyen zorunlu bilgiler: ${missing.join(", ")}. Bu bilgileri fotograf aciklamasina ekleyip yeniden gonderin.`);
+    if (missing.length) throw new Error(`Trendyol deger listesi bos olan zorunlu alanlar: ${missing.join(", ")}. Kategori ayarlarinin kontrol edilmesi gerekiyor.`);
   }
 
   return {
