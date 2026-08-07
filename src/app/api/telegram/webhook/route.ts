@@ -31,6 +31,7 @@ import {
 } from "@/lib/trendyol-commerce-intelligence";
 import { applySeoUpdates, sendSeoReport } from "@/lib/trendyol-seo";
 import { checkPendingProducts, checkProductDraft } from "@/lib/product-tracker";
+import { buildTodaySalesReport } from "@/lib/sales-report";
 
 export const maxDuration = 60;
 export const runtime = "nodejs";
@@ -568,6 +569,17 @@ export async function POST(request: Request) {
   if (!message.photo?.length) {
     const command = message.text?.trim().toLocaleLowerCase("tr-TR");
     const categoryQuery = categorySearchQuery(message.text);
+
+    if (["/rapor bugün", "rapor bugün", "/rapor bugun", "rapor bugun"].includes(command || "")) {
+      await sendTelegramMessage(chatId, "Bugünkü Trendyol satışları ve kesintileri hesaplanıyor...");
+      try {
+        const reportMessages = await buildTodaySalesReport();
+        for (const reportMessage of reportMessages) await sendTelegramMessage(chatId, reportMessage);
+      } catch (error) {
+        await sendTelegramMessage(chatId, `Satış raporu hazırlanamadı: ${error instanceof Error ? error.message : "Bilinmeyen hata"}`);
+      }
+      return Response.json({ ok: true });
+    }
 
     if (command === "/kategori" || command === "kategori") {
       const selected = hasDatabaseUrl() ? await getTelegramSelectedCategory(chatId) : null;
