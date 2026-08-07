@@ -7,10 +7,12 @@ import {
   findDraftByTelegramUpdateId,
   getDraftById,
   getPendingTelegramPriceUpdate,
+  getTelegramSelectedCategory,
   insertDraft,
   markDraftCancelled,
+  saveTelegramSelectedCategory,
 } from "@/lib/db";
-import { analyzeNewProductImage } from "@/lib/ai-product-draft";
+import { analyzeNewProductImage, getTrendyolLeafCategoryById, searchTrendyolLeafCategories } from "@/lib/ai-product-draft";
 import { hasDatabaseUrl } from "@/lib/env";
 import {
   submitDirectProductToTrendyol,
@@ -297,6 +299,50 @@ async function handleProductApprovalButton(update: TelegramUpdate) {
   return true;
 }
 
+async function handleProductCategoryButton(update: TelegramUpdate) {
+  const callback = update.callback_query;
+  if (!callback?.data?.startsWith("pc|") || !callback.message) return false;
+  const chatId = callback.message.chat.id;
+  if (!getAllowedTelegramUserIds().has(telegramId(callback.from.id))) {
+    await answerTelegramCallbackQuery(callback.id, "Bu islem icin yetkiniz yok.");
+    return true;
+  }
+  const categoryId = Number(callback.data.split("|")[1]);
+  const category = Number.isFinite(categoryId) ? await getTrendyolLeafCategoryById(categoryId) : null;
+  if (!category) {
+    await answerTelegramCallbackQuery(callback.id, "Kategori bulunamadi; yeniden arayin.");
+    return true;
+  }
+  await saveTelegramSelectedCategory(chatId, { categoryId: category.id, name: category.name, path: category.path });
+  await answerTelegramCallbackQuery(callback.id, "Aktif kategori secildi.");
+  await sendTelegramMessage(chatId, `✅ Aktif kategori ayarlandi\n${category.path}\nKategori ID: ${category.id}\n\nBundan sonraki urunlerde sadece Urun ve Fiyat yazmaniz yeterli.`);
+  return true;
+}
+
+function categorySearchQuery(value?: string) {
+  const command = value?.trim().replace(/@[a-zA-Z0-9_]+(?=\s|$)/, "") || "";
+  const explicit = command.match(/^\/?kategori\s+(.+)$/i);
+  if (explicit?.[1]) return explicit[1].trim();
+  const shortcut = command.match(/^\/([\p{L}\p{N}_-]{2,})$/u)?.[1];
+  if (!shortcut || ["start", "help", "buybox", "buybox_kontrol", "seo"].includes(shortcut.toLocaleLowerCase("tr-TR"))) return null;
+  return shortcut.replace(/_/g, " ");
+}
+
+async function sendCategorySearch(chatId: number | string, query: string) {
+  const categories = await searchTrendyolLeafCategories(query, 10);
+  if (!categories.length) {
+    await sendTelegramMessage(chatId, `"${query}" icin Trendyol alt kategorisi bulunamadi.`);
+    return;
+  }
+  await sendTelegramMessage(chatId, [
+    `🔎 "${query}" icin Trendyol alt kategorileri:`,
+    ...categories.map((category, index) => `${index + 1}. ${category.path}\nID: ${category.id}`),
+    "\nDogru kategoriyi butondan secin.",
+  ].join("\n\n"), {
+    inlineKeyboard: categories.map((category, index) => [{ callbackData: `pc|${category.id}`, text: `${index + 1}. ${category.name}` }]),
+  });
+}
+
 function imageCaptionPrice(caption?: string) {
   if (!caption?.trim()) return null;
   const lines = caption.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -440,6 +486,10 @@ export async function POST(request: Request) {
     return Response.json({ ok: true });
   }
 
+  if (await handleProductCategoryButton(update)) {
+    return Response.json({ ok: true });
+  }
+
   if (await handleProductApprovalButton(update)) {
     return Response.json({ ok: true });
   }
@@ -463,6 +513,24 @@ export async function POST(request: Request) {
 
   if (!message.photo?.length) {
     const command = message.text?.trim().toLocaleLowerCase("tr-TR");
+    const categoryQuery = categorySearchQuery(message.text);
+
+    if (command === "/kategori" || command === "kategori") {
+      const selected = hasDatabaseUrl() ? await getTelegramSelectedCategory(chatId) : null;
+      await sendTelegramMessage(chatId, selected
+        ? `Aktif kategori:\n${selected.path}\nKategori ID: ${selected.categoryId}\n\nDegistirmek icin /ev, /figur veya /kategori arama yazin.`
+        : "Aktif kategori secilmedi. /ev, /figur veya /kategori fotograf cercevesi yazarak arayin.");
+      return Response.json({ ok: true });
+    }
+
+    if (categoryQuery) {
+      try {
+        await sendCategorySearch(chatId, categoryQuery);
+      } catch (error) {
+        await sendTelegramMessage(chatId, `Kategori aramasi tamamlanamadi: ${error instanceof Error ? error.message : "Bilinmeyen hata"}`);
+      }
+      return Response.json({ ok: true });
+    }
 
     if (
       command === "buybox" ||
@@ -524,6 +592,8 @@ export async function POST(request: Request) {
   const photo = message.photo.at(-1);
   if (!photo) return Response.json({ ok: true });
   const simpleProduct = imageCaptionPrice(message.caption);
+  const activeCategory = databaseEnabled ? await getTelegramSelectedCategory(chatId) : null;
+  const effectiveCategory = simpleProduct?.category || (activeCategory ? String(activeCategory.categoryId) : "");
 
   if (message.media_group_id) {
     if (!databaseEnabled) {
@@ -535,7 +605,7 @@ export async function POST(request: Request) {
       if (!storedImage.imageUrl) throw new Error(storedImage.warning || "Kalici urun gorseli olusturulamadi.");
       await addTelegramAlbumPhoto({
         chatId: telegramId(chatId),
-        category: simpleProduct?.category ?? "",
+        category: effectiveCategory,
         productName: simpleProduct?.productName ?? "",
         fileId: photo.file_id,
         imageUrl: storedImage.imageUrl,
@@ -587,7 +657,7 @@ export async function POST(request: Request) {
         fileIds: [photo.file_id],
         imageUrls: [storedImage.imageUrl],
         notes: simpleProduct.notes,
-        category: simpleProduct.category,
+        category: effectiveCategory,
         productName: simpleProduct.productName,
         price: simpleProduct.price,
         updateId,

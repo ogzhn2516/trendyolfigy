@@ -146,6 +146,20 @@ async function allTrendyolCategories() {
   return fullCategoryTreePromise;
 }
 
+export async function searchTrendyolLeafCategories(query: string, limit = 10) {
+  const searched = flattenCategories(await getCategoryTree(query));
+  const candidates = searched.length ? searched : await allTrendyolCategories();
+  return candidates
+    .map((item) => ({ item, score: categorySimilarity(item, query) }))
+    .sort((a, b) => b.score - a.score || a.item.path.length - b.item.path.length)
+    .slice(0, limit)
+    .map((entry) => entry.item);
+}
+
+export async function getTrendyolLeafCategoryById(categoryId: number) {
+  return (await allTrendyolCategories()).find((item) => item.id === categoryId) ?? null;
+}
+
 async function resolvePreferredCategory(categoryInput: string) {
   const searched = flattenCategories(await getCategoryTree(categoryInput));
   const categories = [...new Map([...(searched || []), ...await allTrendyolCategories()].map((item) => [item.id, item])).values()];

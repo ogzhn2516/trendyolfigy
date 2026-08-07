@@ -190,12 +190,20 @@ const buyboxSnapshotsKey = "buybox_snapshots";
 const commerceActionNoticeKey = "commerce_action_notice";
 const commerceSettingKey = "commerce_settings";
 const pendingPriceUpdatePrefix = "pending_price_update:";
+const selectedCategoryPrefix = "telegram_selected_category:";
 const seoAiQueueKey = "seo_ai_queue";
 
 export type SeoAiQueueItem = {
   chatId: string;
   contentId: number;
   createdAt: string;
+};
+
+export type TelegramSelectedCategory = {
+  categoryId: number;
+  name: string;
+  path: string;
+  selectedAt: string;
 };
 
 export const defaultCommerceSettings: CommerceSettings = {
@@ -599,6 +607,32 @@ export async function clearPendingTelegramPriceUpdate(chatId: number | string) {
     DELETE FROM app_settings
     WHERE key = ${pendingPriceUpdatePrefix + String(chatId)}
   `;
+}
+
+export async function getTelegramSelectedCategory(chatId: number | string): Promise<TelegramSelectedCategory | null> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql<AppSettingRow[]>`
+    SELECT * FROM app_settings WHERE key = ${selectedCategoryPrefix + String(chatId)} LIMIT 1
+  `;
+  const value = rows[0]?.value;
+  if (!value || typeof value !== "object") return null;
+  const category = value as Partial<TelegramSelectedCategory>;
+  const categoryId = Number(category.categoryId);
+  if (!Number.isFinite(categoryId) || !category.name || !category.path) return null;
+  return { categoryId, name: String(category.name), path: String(category.path), selectedAt: String(category.selectedAt || "") };
+}
+
+export async function saveTelegramSelectedCategory(chatId: number | string, category: Omit<TelegramSelectedCategory, "selectedAt">) {
+  await ensureSchema();
+  const sql = getSql();
+  const value: TelegramSelectedCategory = { ...category, selectedAt: new Date().toISOString() };
+  await sql`
+    INSERT INTO app_settings (key, value)
+    VALUES (${selectedCategoryPrefix + String(chatId)}, ${sql.json(toJsonValue(value))})
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+  `;
+  return value;
 }
 
 export async function getSeoAiQueue(): Promise<SeoAiQueueItem[]> {
