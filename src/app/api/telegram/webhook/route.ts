@@ -295,7 +295,17 @@ async function handleProductApprovalButton(update: TelegramUpdate) {
       await new Promise((resolve) => setTimeout(resolve, 3500));
       try {
         const submittedDraft = await getDraftById(draft.id);
-        if (submittedDraft?.status === "submitted") await checkProductDraft(submittedDraft, true);
+        if (submittedDraft?.status === "submitted") {
+          for (let attempt = 0; attempt < 5; attempt += 1) {
+            const outcome = await checkProductDraft(submittedDraft, false);
+            if (outcome.status !== "processing") {
+              await checkProductDraft(submittedDraft, true);
+              break;
+            }
+            if (attempt === 4) await checkProductDraft(submittedDraft, true);
+            else await new Promise((resolve) => setTimeout(resolve, 4000));
+          }
+        }
       } catch {
         // Kuyruk sonucu gecikirse kullanici butonla veya /urun_durum ile tekrar kontrol eder.
       }
