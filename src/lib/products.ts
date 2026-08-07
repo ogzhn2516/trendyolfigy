@@ -8,8 +8,85 @@ import {
 import {
   buildTrendyolPayload,
   createTrendyolProduct,
+  getCategoryAttributes,
+  getCategoryAttributeValues,
   getTrendyolErrorSummary,
 } from "@/lib/trendyol";
+
+type ApiRecord = Record<string, unknown>;
+
+function record(value: unknown): ApiRecord {
+  return value && typeof value === "object" ? value as ApiRecord : {};
+}
+
+function text(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalized(value: string) {
+  return value.toLocaleLowerCase("tr-TR").replace(/ı/g, "i").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, " ").trim();
+}
+
+function defaultHint(attributeName: string) {
+  const name = normalized(attributeName);
+  if (name.includes("mensei")) return "Turkiye TR";
+  if (name.includes("parca")) return "1 Tek Parca";
+  if (name.includes("hammadde") || name.includes("materyal") || name.includes("malzeme")) return "PLA Plastik";
+  if (name.includes("uretim")) return "3D Baski 3D Yazici Yerli Uretim";
+  if (name.includes("renk") || name.includes("web color")) return "Cok Renkli";
+  if (name.includes("beden") || name.includes("boyut") || name.includes("ebat")) return "Tek Ebat Standart";
+  if (name.includes("cinsiyet")) return "Unisex";
+  if (name.includes("yas grubu")) return "Yetiskin";
+  return "Standart Diger Yok";
+}
+
+function pickValue(values: Array<{ id: number; name: string }>, hint: string) {
+  const hints = normalized(hint).split(/\s+/).filter(Boolean);
+  const ranked = values.map((value) => {
+    const candidate = normalized(value.name);
+    const score = hints.filter((word) => candidate.includes(word) || word.includes(candidate)).length;
+    return { score, value };
+  }).sort((a, b) => b.score - a.score);
+  return ranked[0]?.score > 0 ? ranked[0].value : values[0] ?? null;
+}
+
+async function completeRequiredAttributes(draft: NonNullable<Awaited<ReturnType<typeof getDraftById>>>) {
+  const response = record(await getCategoryAttributes(draft.categoryId));
+  const categoryAttributes = Array.isArray(response.categoryAttributes) ? response.categoryAttributes.map(record) : [];
+  const required = categoryAttributes.filter((item) => item.required === true);
+  let attributes = [...draft.attributes];
+  const existingIds = new Set(attributes.map((item) => item.attributeId));
+
+  for (const item of required) {
+    const attribute = record(item.attribute);
+    const attributeId = Number(attribute.id || item.attributeId);
+    if (!Number.isFinite(attributeId)) continue;
+    const attributeName = text(attribute.name) || text(item.attributeName);
+    const normalizedName = normalized(attributeName);
+    const forceStandard = attributeId === 1192 || normalizedName.includes("mensei") || normalizedName.includes("parca sayisi") || normalizedName.includes("hammadde") || normalizedName.includes("materyal") || normalizedName.includes("malzeme") || normalizedName.includes("uretim");
+    if (existingIds.has(attributeId) && !forceStandard) continue;
+    if (forceStandard) {
+      attributes = attributes.filter((entry) => entry.attributeId !== attributeId);
+      existingIds.delete(attributeId);
+    }
+    const hint = defaultHint(attributeName);
+    if (item.allowCustom === true) {
+      attributes.push({ attributeId, customAttributeValue: hint.slice(0, 100) });
+      existingIds.add(attributeId);
+      continue;
+    }
+    const valuesResponse = record(await getCategoryAttributeValues(draft.categoryId, attributeId));
+    const values = (Array.isArray(valuesResponse.content) ? valuesResponse.content : []).map((raw) => ({
+      id: Number(record(raw).attributeValueId),
+      name: text(record(raw).attributeValue),
+    })).filter((value) => Number.isFinite(value.id) && value.name);
+    const selected = pickValue(values, hint);
+    if (!selected) throw new Error(`Zorunlu kategori ozelligi icin deger bulunamadi: ${attributeName} (${attributeId}).`);
+    attributes.push({ attributeId, attributeValueId: selected.id });
+    existingIds.add(attributeId);
+  }
+  return { ...draft, attributes };
+}
 
 function getBatchRequestId(response: unknown) {
   if (!response || typeof response !== "object") {
@@ -46,7 +123,8 @@ function validateDraftForSubmission(
 export async function submitDirectProductToTrendyol(
   draft: NonNullable<Awaited<ReturnType<typeof getDraftById>>>,
 ) {
-  const validationError = validateDraftForSubmission(draft);
+  const completedDraft = await completeRequiredAttributes(draft);
+  const validationError = validateDraftForSubmission(completedDraft);
 
   if (validationError) {
     return {
@@ -57,7 +135,7 @@ export async function submitDirectProductToTrendyol(
   }
 
   try {
-    const payload = buildTrendyolPayload(draft);
+    const payload = buildTrendyolPayload(completedDraft);
     const response = await createTrendyolProduct(payload);
 
     return {

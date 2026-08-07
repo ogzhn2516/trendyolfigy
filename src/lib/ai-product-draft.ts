@@ -317,7 +317,7 @@ export async function analyzeNewProductImage(imageInput: string | string[], user
   if (!category) throw new Error("Gecerli Trendyol alt kategorisi secilemedi.");
 
   const attributesResponse = await getCategoryAttributes(category.id);
-  const required = categoryAttributes(attributesResponse).filter((item) => item.required === true && !normalizedValue(text(record(item.attribute).name)).includes("mensei"));
+  const required = categoryAttributes(attributesResponse).filter((item) => item.required === true);
   let attributes: TrendyolAttributeInput[] = [];
   if (required.length) {
     const compact = await Promise.all(required.map(async (item) => {
