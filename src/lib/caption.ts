@@ -314,7 +314,7 @@ export function parseProductCaption(caption?: string): ParsedCaption {
   };
 }
 
-export const telegramCaptionTemplate = `Önce /kategori yazın ve Trendyol'daki tam kategori yolunu gönderin.
+export const telegramCaptionTemplate = `Önce /kategori yazın ve Trendyol kategori sayfasının bağlantısını veya tam kategori yolunu gönderin.
 Kategori /iptal yazılana kadar sonraki ürünlerde otomatik kullanılır.
 
 Sonra AI ile yeni ürün oluşturmak için fotoğraf veya albüm açıklamasına şunları yazın:

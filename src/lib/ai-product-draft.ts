@@ -172,14 +172,23 @@ function cleanRequestedCategoryPath(value: string) {
 }
 
 export async function findTrendyolLeafCategoryByPath(input: string) {
+  const categoryIdMatch = input.match(/-x-c(\d{2,})/i) ?? input.trim().match(/^(\d{2,})$/);
+  if (categoryIdMatch) {
+    const byId = await getTrendyolLeafCategoryById(Number(categoryIdMatch[1]));
+    if (byId) return byId;
+  }
   const requestedPath = cleanRequestedCategoryPath(input);
   const requested = normalizedValue(requestedPath);
   if (!requested) return null;
   const categories = await allTrendyolCategories();
-  return categories.find((category) => {
+  const exactPath = categories.find((category) => {
     const path = normalizedValue(category.path);
     return path === requested || requested.endsWith(path);
-  }) ?? null;
+  });
+  if (exactPath) return exactPath;
+  const leafName = normalizedValue(requestedPath.split(">").at(-1) ?? requestedPath);
+  const exactLeaves = categories.filter((category) => normalizedValue(category.name) === leafName);
+  return exactLeaves.length === 1 ? exactLeaves[0] : null;
 }
 
 async function resolvePreferredCategory(categoryInput: string) {

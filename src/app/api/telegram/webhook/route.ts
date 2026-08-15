@@ -351,6 +351,7 @@ async function handleProductCategoryButton(update: TelegramUpdate) {
     return true;
   }
   await saveTelegramSelectedCategory(chatId, { categoryId: category.id, name: category.name, path: category.path });
+  await clearTelegramCategorySelection(chatId);
   await answerTelegramCallbackQuery(callback.id, "Aktif kategori secildi.");
   await sendTelegramMessage(chatId, `✅ Aktif kategori ayarlandi\n${category.path}\nKategori ID: ${category.id}\n\nBundan sonraki urunlerde sadece Urun ve Fiyat yazmaniz yeterli.`);
   return true;
@@ -606,7 +607,11 @@ export async function POST(request: Request) {
       await sendTelegramMessage(chatId, [
         "Eklemek istediğiniz tam Trendyol kategori yolunu gönderin.",
         "",
-        "Örnek:",
+        "En kolay yöntem: Trendyol kategori sayfasının bağlantısını kopyalayıp gönderin.",
+        "Örnek bağlantı:",
+        "https://www.trendyol.com/kitap-tutucu-x-c143572",
+        "",
+        "İsterseniz kategori yolunu da gönderebilirsiniz:",
         "Trendyol > Ev ve Mobilya > Ev Dekorasyon > Kitap Tutucu",
         "",
         selected ? `Şu an aktif: ${selected.path}` : "Şu an aktif kategori yok.",
@@ -619,7 +624,13 @@ export async function POST(request: Request) {
       try {
         const category = await findTrendyolLeafCategoryByPath(message.text);
         if (!category) {
-          await sendTelegramMessage(chatId, "❌ Tam kategori yolu bulunamadı. Trendyol'daki üst kategorilerden son alt kategoriye kadar yolu eksiksiz gönderin veya /iptal yazın.");
+          const query = message.text.match(/\/([^/]+)-x-c\d+/i)?.[1]?.replace(/-/g, " ") || message.text;
+          const suggestions = await searchTrendyolLeafCategories(query, 5);
+          await sendTelegramMessage(chatId, suggestions.length
+            ? "Tam eşleşme bulunamadı. Aşağıdaki en yakın kategorilerden doğru olanı seçin veya Trendyol kategori sayfasının bağlantısını gönderin."
+            : "❌ Kategori bulunamadı. Trendyol'da kategori sayfasını açıp adres çubuğundaki bağlantıyı kopyalayarak gönderin veya /iptal yazın.", suggestions.length ? {
+              inlineKeyboard: suggestions.map((item, index) => [{ callbackData: `pc|${item.id}`, text: `${index + 1}. ${item.name}` }]),
+            } : undefined);
           return Response.json({ ok: true });
         }
         await saveTelegramSelectedCategory(chatId, { categoryId: category.id, name: category.name, path: category.path });
