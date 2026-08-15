@@ -160,6 +160,28 @@ export async function getTrendyolLeafCategoryById(categoryId: number) {
   return (await allTrendyolCategories()).find((item) => item.id === categoryId) ?? null;
 }
 
+function cleanRequestedCategoryPath(value: string) {
+  return value
+    .replace(/\[([^\]]+)\]\([^\)]+\)/g, "$1 > ")
+    .replace(/https?:\/\/\S+/gi, " ")
+    .split(/\r?\n|>/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .filter((part, index) => !(index === 0 && normalizedValue(part) === "trendyol"))
+    .join(" > ");
+}
+
+export async function findTrendyolLeafCategoryByPath(input: string) {
+  const requestedPath = cleanRequestedCategoryPath(input);
+  const requested = normalizedValue(requestedPath);
+  if (!requested) return null;
+  const categories = await allTrendyolCategories();
+  return categories.find((category) => {
+    const path = normalizedValue(category.path);
+    return path === requested || requested.endsWith(path);
+  }) ?? null;
+}
+
 async function resolvePreferredCategory(categoryInput: string) {
   const searched = flattenCategories(await getCategoryTree(categoryInput));
   const categories = [...new Map([...(searched || []), ...await allTrendyolCategories()].map((item) => [item.id, item])).values()];

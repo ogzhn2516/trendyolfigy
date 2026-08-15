@@ -192,6 +192,7 @@ const commerceActionNoticeKey = "commerce_action_notice";
 const commerceSettingKey = "commerce_settings";
 const pendingPriceUpdatePrefix = "pending_price_update:";
 const selectedCategoryPrefix = "telegram_selected_category:";
+const categorySelectionPendingPrefix = "telegram_category_selection_pending:";
 const seoAiQueueKey = "seo_ai_queue";
 
 export type SeoAiQueueItem = {
@@ -634,6 +635,35 @@ export async function saveTelegramSelectedCategory(chatId: number | string, cate
     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
   `;
   return value;
+}
+
+export async function beginTelegramCategorySelection(chatId: number | string) {
+  await ensureSchema();
+  const sql = getSql();
+  await sql`
+    INSERT INTO app_settings (key, value)
+    VALUES (${categorySelectionPendingPrefix + String(chatId)}, ${sql.json(toJsonValue({ awaiting: true }))})
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+  `;
+}
+
+export async function isTelegramCategorySelectionPending(chatId: number | string) {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql<AppSettingRow[]>`
+    SELECT * FROM app_settings WHERE key = ${categorySelectionPendingPrefix + String(chatId)} LIMIT 1
+  `;
+  return rows.length > 0;
+}
+
+export async function clearTelegramCategorySelection(chatId: number | string, clearSelected = false) {
+  await ensureSchema();
+  const sql = getSql();
+  if (clearSelected) {
+    await sql`DELETE FROM app_settings WHERE key IN (${categorySelectionPendingPrefix + String(chatId)}, ${selectedCategoryPrefix + String(chatId)})`;
+  } else {
+    await sql`DELETE FROM app_settings WHERE key = ${categorySelectionPendingPrefix + String(chatId)}`;
+  }
 }
 
 export async function getSeoAiQueue(): Promise<SeoAiQueueItem[]> {

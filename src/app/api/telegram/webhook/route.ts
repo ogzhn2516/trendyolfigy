@@ -1,6 +1,8 @@
 import { parseProductCaption, telegramCaptionTemplate } from "@/lib/caption";
 import type { ProductDraft } from "@/lib/db";
 import {
+  beginTelegramCategorySelection,
+  clearTelegramCategorySelection,
   clearPendingTelegramPriceUpdate,
   addTelegramAlbumPhoto,
   claimTelegramAlbum,
@@ -8,11 +10,12 @@ import {
   getDraftById,
   getPendingTelegramPriceUpdate,
   getTelegramSelectedCategory,
+  isTelegramCategorySelectionPending,
   insertDraft,
   markDraftCancelled,
   saveTelegramSelectedCategory,
 } from "@/lib/db";
-import { analyzeNewProductImage, getTrendyolLeafCategoryById, searchTrendyolLeafCategories } from "@/lib/ai-product-draft";
+import { analyzeNewProductImage, findTrendyolLeafCategoryByPath, getTrendyolLeafCategoryById, searchTrendyolLeafCategories } from "@/lib/ai-product-draft";
 import { hasDatabaseUrl } from "@/lib/env";
 import {
   submitDirectProductToTrendyol,
@@ -419,7 +422,10 @@ function imageCaptionPrice(caption?: string) {
   const category = categoryLine?.replace(/^kategori\s*:\s*/i, "").trim() || "";
   const productLine = lines.find((line) => /^(?:urun|ürün)\s*:/i.test(line));
   const productName = productLine?.replace(/^(?:urun|ürün)\s*:\s*/i, "").trim() || "";
-  const notes = lines.filter((line) => line !== categoryLine && line !== priceLine && line !== productLine).join("\n");
+  const descriptionLine = lines.find((line) => /^(?:aciklama|açıklama)\s*:/i.test(line));
+  const description = descriptionLine?.replace(/^(?:aciklama|açıklama)\s*:\s*/i, "").trim() || "";
+  const extraNotes = lines.filter((line) => line !== categoryLine && line !== priceLine && line !== productLine && line !== descriptionLine).join("\n");
+  const notes = [description, extraNotes].filter(Boolean).join("\n");
   return { category, notes, price, productName };
 }
 
@@ -584,6 +590,58 @@ export async function POST(request: Request) {
     const command = message.text?.trim().toLocaleLowerCase("tr-TR");
     const categoryQuery = categorySearchQuery(message.text);
 
+    if (command === "/iptal" || command === "iptal") {
+      if (hasDatabaseUrl()) await clearTelegramCategorySelection(chatId, true);
+      await sendTelegramMessage(chatId, "✅ Aktif kategori temizlendi. Yeni kategori seçmek için /kategori yazın.");
+      return Response.json({ ok: true });
+    }
+
+    if (command === "/kategori" || command === "kategori") {
+      if (!hasDatabaseUrl()) {
+        await sendTelegramMessage(chatId, "Kategori oturumu için veritabanı bağlantısı gerekli.");
+        return Response.json({ ok: true });
+      }
+      await beginTelegramCategorySelection(chatId);
+      const selected = await getTelegramSelectedCategory(chatId);
+      await sendTelegramMessage(chatId, [
+        "Eklemek istediğiniz tam Trendyol kategori yolunu gönderin.",
+        "",
+        "Örnek:",
+        "Trendyol > Ev ve Mobilya > Ev Dekorasyon > Kitap Tutucu",
+        "",
+        selected ? `Şu an aktif: ${selected.path}` : "Şu an aktif kategori yok.",
+        "Kategori kesin eşleşirse kaydedilir ve /iptal yazana kadar sonraki tüm ürünlerde kullanılır.",
+      ].join("\n"));
+      return Response.json({ ok: true });
+    }
+
+    if (hasDatabaseUrl() && await isTelegramCategorySelectionPending(chatId) && message.text?.trim()) {
+      try {
+        const category = await findTrendyolLeafCategoryByPath(message.text);
+        if (!category) {
+          await sendTelegramMessage(chatId, "❌ Tam kategori yolu bulunamadı. Trendyol'daki üst kategorilerden son alt kategoriye kadar yolu eksiksiz gönderin veya /iptal yazın.");
+          return Response.json({ ok: true });
+        }
+        await saveTelegramSelectedCategory(chatId, { categoryId: category.id, name: category.name, path: category.path });
+        await clearTelegramCategorySelection(chatId);
+        await sendTelegramMessage(chatId, [
+          "✅ Kategori kaydedildi.",
+          category.path,
+          `Kategori ID: ${category.id}`,
+          "",
+          "Artık fotoğraf veya albüm açıklamasına yalnızca şunları yazın:",
+          "Ürün: ürün adı",
+          "Açıklama: ürün bilgisi",
+          "Fiyat: 349,90",
+          "",
+          "Kategori /iptal yazılana kadar değişmez.",
+        ].join("\n"));
+      } catch (error) {
+        await sendTelegramMessage(chatId, `Kategori doğrulanamadı: ${error instanceof Error ? error.message : "Bilinmeyen hata"}`);
+      }
+      return Response.json({ ok: true });
+    }
+
     if (["/rapor bugün", "rapor bugün", "/rapor bugun", "rapor bugun"].includes(command || "")) {
       await sendTelegramMessage(chatId, "Bugünkü Trendyol satışları ve kesintileri hesaplanıyor...");
       try {
@@ -595,13 +653,6 @@ export async function POST(request: Request) {
       return Response.json({ ok: true });
     }
 
-    if (command === "/kategori" || command === "kategori") {
-      const selected = hasDatabaseUrl() ? await getTelegramSelectedCategory(chatId) : null;
-      await sendTelegramMessage(chatId, selected
-        ? `Aktif kategori:\n${selected.path}\nKategori ID: ${selected.categoryId}\n\nDegistirmek icin /ev, /figur veya /kategori arama yazin.`
-        : "Aktif kategori secilmedi. /ev, /figur veya /kategori fotograf cercevesi yazarak arayin.");
-      return Response.json({ ok: true });
-    }
 
     if (["/urun_durum", "urun durum", "ürün durum", "/urun_durumu"].includes(command || "")) {
       await sendTelegramMessage(chatId, "Gönderilen ürünlerin Trendyol durumu kontrol ediliyor...");
@@ -685,6 +736,11 @@ export async function POST(request: Request) {
   const simpleProduct = imageCaptionPrice(message.caption);
   const activeCategory = databaseEnabled ? await getTelegramSelectedCategory(chatId) : null;
   const effectiveCategory = simpleProduct?.category || (activeCategory ? String(activeCategory.categoryId) : "");
+
+  if (simpleProduct && !effectiveCategory) {
+    await sendTelegramMessage(chatId, "❌ Aktif kategori yok. Önce /kategori yazın, tam kategori yolunu gönderin; ardından ürünü tekrar gönderin.");
+    return Response.json({ ok: true });
+  }
 
   if (message.media_group_id) {
     if (!databaseEnabled) {

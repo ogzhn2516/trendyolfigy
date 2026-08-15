@@ -314,24 +314,15 @@ export function parseProductCaption(caption?: string): ParsedCaption {
   };
 }
 
-export const telegramCaptionTemplate = `Once /ev, /figur veya /kategori fotograf cercevesi yazarak Trendyol alt kategorisini butondan sec.
+export const telegramCaptionTemplate = `Önce /kategori yazın ve Trendyol'daki tam kategori yolunu gönderin.
+Kategori /iptal yazılana kadar sonraki ürünlerde otomatik kullanılır.
 
-Sonra AI ile yeni urun olusturmak icin fotograf veya album aciklamasina urun ve fiyati yaz:
+Sonra AI ile yeni ürün oluşturmak için fotoğraf veya albüm açıklamasına şunları yazın:
 
-Fiyat: 499.90
-Urun: Dekoratif zürafa biblo 13 cm
+Ürün: ürün adı
+Açıklama: ürün hakkında doğrulanmış bilgi
+Fiyat: 349,90
 
-Bot aktif kategori ID'sini kullanir; verdigin urun adini kaynak kabul ederek SEO baslik/aciklama taslagini hazirlar. Gorsel urun turunu tahmin etmek icin kullanilmaz. Onay vermeden urun yuklenmez.
+Bot aktif kategorinin kesin Trendyol ID'sini kullanır. Ürün adını SEO için geliştirir ve açıklamayı hazırlar; onay vermeden yükleme yapmaz.
 
-Birden fazla fotograf icin fotograflari Telegram'da tek album olarak sec. Fiyati albumun ilk fotograf aciklamasina yaz. Ilk gorsel AI tarafindan analiz edilir; en fazla 8 album gorseli Trendyol'a ayni sirayla yuklenir.
-
-Manuel urun gondermek icin fotograf aciklamasini su bicimde gonder:
-
-Ürün: Figyfun örnek hayvan figür oyuncak
-Açıklama: Ürünün Trendyol açıklaması
-Fiyat: 499.90
-
-Hayvan Figür Oyuncak kategori, KDV 20, stok 1000 ve zorunlu kategori özellikleri otomatik eklenir.
-
-Ev dekoratif obje ve biblo için ayrıca şunu ekleyebilirsin:
-Kategori: ev`;
+Birden fazla fotoğraf için görselleri Telegram'da tek albüm olarak seçin. Ürün, Açıklama ve Fiyat bilgilerini albümün ilk fotoğraf açıklamasına yazın. En fazla 8 görsel aynı sırayla Trendyol'a yüklenir.`;
