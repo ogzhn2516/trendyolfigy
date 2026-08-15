@@ -626,6 +626,7 @@ export async function POST(request: Request) {
         if (!category) {
           const query = message.text.match(/\/([^/]+)-x-c\d+/i)?.[1]?.replace(/-/g, " ") || message.text;
           const suggestions = await searchTrendyolLeafCategories(query, 5);
+          console.info("[telegram/category] Exact category not found; showing confirmation choices.", { query, suggestionCount: suggestions.length });
           await sendTelegramMessage(chatId, suggestions.length
             ? "Tam eşleşme bulunamadı. Aşağıdaki en yakın kategorilerden doğru olanı seçin veya Trendyol kategori sayfasının bağlantısını gönderin."
             : "❌ Kategori bulunamadı. Trendyol'da kategori sayfasını açıp adres çubuğundaki bağlantıyı kopyalayarak gönderin veya /iptal yazın.", suggestions.length ? {
@@ -633,6 +634,7 @@ export async function POST(request: Request) {
             } : undefined);
           return Response.json({ ok: true });
         }
+        console.info("[telegram/category] Category resolved safely.", { categoryId: category.id, categoryName: category.name });
         await saveTelegramSelectedCategory(chatId, { categoryId: category.id, name: category.name, path: category.path });
         await clearTelegramCategorySelection(chatId);
         await sendTelegramMessage(chatId, [

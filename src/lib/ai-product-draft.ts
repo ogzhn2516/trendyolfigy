@@ -172,15 +172,22 @@ function cleanRequestedCategoryPath(value: string) {
 }
 
 export async function findTrendyolLeafCategoryByPath(input: string) {
-  const categoryIdMatch = input.match(/-x-c(\d{2,})/i) ?? input.trim().match(/^(\d{2,})$/);
-  if (categoryIdMatch) {
-    const byId = await getTrendyolLeafCategoryById(Number(categoryIdMatch[1]));
+  const categories = await allTrendyolCategories();
+  const urlSlugMatch = input.match(/\/([^/?#]+)-x-c\d+(?:[/?#]|$)/i);
+  if (urlSlugMatch?.[1]) {
+    const slugName = decodeURIComponent(urlSlugMatch[1]).replace(/-/g, " ");
+    const normalizedSlug = normalizedValue(slugName);
+    const exactSlugMatches = categories.filter((category) => normalizedValue(category.name) === normalizedSlug);
+    return exactSlugMatches.length === 1 ? exactSlugMatches[0] : null;
+  }
+  const explicitIdMatch = input.trim().match(/^(\d{2,})$/);
+  if (explicitIdMatch) {
+    const byId = await getTrendyolLeafCategoryById(Number(explicitIdMatch[1]));
     if (byId) return byId;
   }
   const requestedPath = cleanRequestedCategoryPath(input);
   const requested = normalizedValue(requestedPath);
   if (!requested) return null;
-  const categories = await allTrendyolCategories();
   const exactPath = categories.find((category) => {
     const path = normalizedValue(category.path);
     return path === requested || requested.endsWith(path);
